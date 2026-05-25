@@ -1,0 +1,28 @@
+{
+  "name": "fitness-trainer-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.5.0",
+    "date-fns": "^4.1.0",
+    "react": "^19.0.0",
+    "react-big-calendar": "^1.17.1",
+    "react-dom": "^19.0.0",
+    "react-redux": "^9.2.0",
+    "react-router-dom": "^7.1.1",
+    "styled-components": "^6.1.13"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.2",
+    "@types/react-big-calendar": "^1.16.0",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.6"
+  }
+}
