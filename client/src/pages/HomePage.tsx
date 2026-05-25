@@ -73,7 +73,11 @@ export function HomePage() {
             isTrainer={isAuthenticated}
             onDateChange={setRangeDate}
             onCreate={async (data) => {
-              await createSession(data).unwrap();
+              await createSession({
+                clientIds: data.clientIds,
+                start: data.start,
+                workoutType: data.workoutType,
+              }).unwrap();
             }}
             onConfirm={async (id) => {
               await confirmSession(id).unwrap();

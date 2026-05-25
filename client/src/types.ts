@@ -22,6 +22,7 @@ export interface Session {
   status: SessionStatus;
   deducted: boolean;
   reassigned: boolean;
+  runningGroupId: string;
   createdAt: string;
   updatedAt: string;
 }

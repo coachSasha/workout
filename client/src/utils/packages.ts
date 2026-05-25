@@ -19,6 +19,10 @@ export function balanceFor(client: Client, type: WorkoutType): number {
   }
 }
 
+export function clientsWithBalance(clients: Client[], type: WorkoutType): Client[] {
+  return clients.filter((c) => balanceFor(c, type) > 0);
+}
+
 export function availableWorkoutTypes(client: Client): WorkoutType[] {
   const types: WorkoutType[] = [];
   if (client.soloRemaining > 0) types.push('solo');

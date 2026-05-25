@@ -30,10 +30,11 @@
 
 #### Лист Sessions
 
-| id | client_id | client_name | start_datetime | end_datetime | workout_type | status | deducted | created_at | updated_at | reassigned |
+| id | client_id | client_name | start_datetime | end_datetime | workout_type | status | deducted | created_at | updated_at | reassigned | running_group_id |
 
 `deducted`: `true` при отмене со списанием из пакета.  
-`reassigned`: `true` если отменённая запись уже переназначена другому клиенту (один раз на слот).
+`reassigned`: `true` если отменённая запись уже переназначена другому клиенту (один раз на слот).  
+`running_group_id`: общий id для группового бега на один слот (несколько строк Sessions).
 
 `workout_type`: `solo` | `split` | `running`  
 `status`: `scheduled` | `completed` | `cancelled`

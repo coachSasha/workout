@@ -97,13 +97,13 @@ export const api = createApi({
       providesTags: ['Sessions'],
     }),
     createSession: builder.mutation<
-      Session,
-      { clientId: string; start: string; workoutType: WorkoutType }
+      Session[],
+      { clientIds: string[]; start: string; workoutType: WorkoutType }
     >({
       query: (body) => ({ url: '/sessions', method: 'POST', body }),
       invalidatesTags: ['Sessions', 'Clients', 'Client'],
     }),
-    confirmSession: builder.mutation<Session, string>({
+    confirmSession: builder.mutation<Session[], string>({
       query: (id) => ({ url: `/sessions/${id}/confirm`, method: 'PATCH' }),
       invalidatesTags: ['Sessions', 'Clients', 'Client'],
     }),
