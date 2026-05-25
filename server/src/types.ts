@@ -25,6 +25,8 @@ export interface Session {
   deducted: boolean;
   /** отменённая запись уже переназначена другому клиенту */
   reassigned: boolean;
+  /** общий id групповой тренировки «бег» на один слот */
+  runningGroupId: string;
   createdAt: string;
   updatedAt: string;
 }

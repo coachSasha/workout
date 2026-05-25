@@ -40,6 +40,7 @@ const SESSION_HEADERS = [
   'created_at',
   'updated_at',
   'reassigned',
+  'running_group_id',
 ];
 
 const DAYS_OFF_SHEET = 'DaysOff';
@@ -120,6 +121,7 @@ async function getClientHeaders(): Promise<string[]> {
 function rowToSession(row: string[]): Session {
   const hasDeductedCol = row.length > 9;
   const hasReassignedCol = row.length > 10;
+  const hasGroupCol = row.length > 11;
   return {
     id: row[0] ?? '',
     clientId: row[1] ?? '',
@@ -132,6 +134,7 @@ function rowToSession(row: string[]): Session {
     createdAt: hasDeductedCol ? (row[8] ?? '') : (row[7] ?? ''),
     updatedAt: hasDeductedCol ? (row[9] ?? '') : (row[8] ?? ''),
     reassigned: hasReassignedCol ? (row[10] ?? '').toLowerCase() === 'true' : false,
+    runningGroupId: hasGroupCol ? (row[11] ?? '') : '',
   };
 }
 
@@ -148,6 +151,7 @@ function sessionToRow(s: Session): string[] {
     s.createdAt,
     s.updatedAt,
     String(s.reassigned ?? false),
+    s.runningGroupId ?? '',
   ];
 }
 
@@ -173,12 +177,45 @@ function assertSlotHasNoScheduled(sessions: Session[], start: string): void {
   }
 }
 
-function assertSlotAvailableForNewBooking(sessions: Session[], start: string): void {
+function runningPeers(sessions: Session[], session: Session): Session[] {
+  if (!session.runningGroupId) return [session];
+  return sessions.filter(
+    (s) =>
+      s.runningGroupId === session.runningGroupId &&
+      s.startDatetime === session.startDatetime,
+  );
+}
+
+function slotBlocksNewBooking(sessions: Session[], start: string): void {
   const atSlot = sessionsAtStart(sessions, start);
   if (atSlot.some((s) => s.status === 'scheduled')) {
     throw new Error('SLOT_OCCUPIED');
   }
-  if (atSlot.some((s) => s.status === 'cancelled' && !s.reassigned)) {
+
+  for (const s of atSlot) {
+    if (s.workoutType !== 'running' && s.status === 'cancelled' && !s.reassigned) {
+      throw new Error('SLOT_NEEDS_REASSIGN');
+    }
+  }
+
+  const groupIds = new Set(
+    atSlot
+      .filter((s) => s.workoutType === 'running' && s.runningGroupId)
+      .map((s) => s.runningGroupId),
+  );
+  for (const gid of groupIds) {
+    const group = atSlot.filter((s) => s.runningGroupId === gid);
+    const allCancelled = group.every((s) => s.status === 'cancelled');
+    const needsReassign = group.some((s) => !s.reassigned);
+    if (allCancelled && needsReassign) {
+      throw new Error('SLOT_NEEDS_REASSIGN');
+    }
+  }
+
+  const legacyRunning = atSlot.filter(
+    (s) => s.workoutType === 'running' && !s.runningGroupId && s.status === 'cancelled' && !s.reassigned,
+  );
+  if (legacyRunning.length > 0) {
     throw new Error('SLOT_NEEDS_REASSIGN');
   }
 }
@@ -545,39 +582,54 @@ function assertClientHasPackage(
   if (client[field] <= 0) throw new Error('INSUFFICIENT_BALANCE');
 }
 
-export async function createSession(data: {
-  clientId: string;
+export async function createSessions(data: {
+  clientIds: string[];
   start: string;
   workoutType: WorkoutType;
-}): Promise<Session> {
-  const client = await getClientById(data.clientId);
-  if (!client) throw new Error('CLIENT_NOT_FOUND');
+}): Promise<Session[]> {
+  const ids = [...new Set(data.clientIds)];
+  if (ids.length === 0) throw new Error('CLIENT_IDS_REQUIRED');
+  if (data.workoutType !== 'running' && ids.length > 1) {
+    throw new Error('SINGLE_CLIENT_ONLY');
+  }
 
   if (await isDateDayOff(toDateKey(data.start))) {
     throw new Error('DAY_OFF');
   }
 
-  assertClientHasPackage(client, data.workoutType);
-
   const sessions = await getAllSessionsRaw();
-  assertSlotAvailableForNewBooking(sessions, data.start);
+  slotBlocksNewBooking(sessions, data.start);
+
+  const clients = await getAllClientsRaw();
   const ts = nowIso();
-  const session: Session = {
-    id: uuidv4(),
-    clientId: client.id,
-    clientName: formatClientName(client),
-    startDatetime: data.start,
-    endDatetime: addMinutes(data.start, config.slotDurationMinutes),
-    workoutType: data.workoutType,
-    status: 'scheduled',
-    deducted: false,
-    reassigned: false,
-    createdAt: ts,
-    updatedAt: ts,
-  };
-  sessions.push(session);
+  const end = addMinutes(data.start, config.slotDurationMinutes);
+  const runningGroupId = data.workoutType === 'running' ? uuidv4() : '';
+  const created: Session[] = [];
+
+  for (const clientId of ids) {
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) throw new Error('CLIENT_NOT_FOUND');
+    assertClientHasPackage(client, data.workoutType);
+
+    created.push({
+      id: uuidv4(),
+      clientId: client.id,
+      clientName: formatClientName(client),
+      startDatetime: data.start,
+      endDatetime: end,
+      workoutType: data.workoutType,
+      status: 'scheduled',
+      deducted: false,
+      reassigned: false,
+      runningGroupId,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  }
+
+  sessions.push(...created);
   await saveSessions(sessions);
-  return session;
+  return created;
 }
 
 export async function getSessionById(id: string): Promise<Session | null> {
@@ -585,34 +637,51 @@ export async function getSessionById(id: string): Promise<Session | null> {
   return sessions.find((s) => s.id === id) ?? null;
 }
 
-export async function confirmSession(id: string): Promise<Session> {
+export async function confirmSession(id: string): Promise<Session[]> {
   const sessions = await getAllSessionsRaw();
   const idx = sessions.findIndex((s) => s.id === id);
   if (idx === -1) throw new Error('SESSION_NOT_FOUND');
 
   const session = sessions[idx];
-  if (session.status === 'completed') return session;
-  if (session.status === 'cancelled') throw new Error('SESSION_CANCELLED');
+
+  let toConfirm: Session[];
+  if (session.workoutType === 'running' && session.runningGroupId) {
+    toConfirm = runningPeers(sessions, session).filter((s) => s.status === 'scheduled');
+    if (toConfirm.length === 0) {
+      throw new Error('SESSION_CANCELLED');
+    }
+  } else {
+    if (session.status === 'cancelled') throw new Error('SESSION_CANCELLED');
+    if (session.status === 'completed') return [session];
+    toConfirm = session.status === 'scheduled' ? [session] : [];
+  }
+
+  if (toConfirm.length === 0) {
+    return [session];
+  }
 
   const clients = await getAllClientsRaw();
-  const clientIdx = clients.findIndex((c) => c.id === session.clientId);
-  if (clientIdx === -1) throw new Error('CLIENT_NOT_FOUND');
-
-  const client = clients[clientIdx];
+  const ts = nowIso();
   const field = remainingField(session.workoutType);
-  if (client[field] <= 0) throw new Error('INSUFFICIENT_BALANCE');
 
-  client[field] -= 1;
-  session.status = 'completed';
-  session.deducted = false;
-  session.updatedAt = nowIso();
+  for (const s of toConfirm) {
+    const clientIdx = clients.findIndex((c) => c.id === s.clientId);
+    if (clientIdx === -1) throw new Error('CLIENT_NOT_FOUND');
+    const client = clients[clientIdx];
+    if (client[field] <= 0) throw new Error('INSUFFICIENT_BALANCE');
+    client[field] -= 1;
+    clients[clientIdx] = client;
 
-  clients[clientIdx] = client;
-  sessions[idx] = session;
+    const sIdx = sessions.findIndex((x) => x.id === s.id);
+    if (sIdx === -1) continue;
+    sessions[sIdx].status = 'completed';
+    sessions[sIdx].deducted = false;
+    sessions[sIdx].updatedAt = ts;
+  }
 
   await saveClients(clients);
   await saveSessions(sessions);
-  return session;
+  return toConfirm.map((s) => sessions.find((x) => x.id === s.id)!);
 }
 
 function isClientHistory(s: Session, clientId: string): boolean {
@@ -639,14 +708,21 @@ function sessionToHistoryItem(s: Session): CompletedHistoryItem {
   };
 }
 
-export async function cancelSession(id: string, deduct: boolean): Promise<Session> {
+export async function cancelSession(
+  id: string,
+  deduct: boolean,
+): Promise<{ session: Session; groupFullyCancelled: boolean }> {
   const sessions = await getAllSessionsRaw();
   const idx = sessions.findIndex((s) => s.id === id);
   if (idx === -1) throw new Error('SESSION_NOT_FOUND');
 
   const session = sessions[idx];
   if (session.status === 'completed') throw new Error('SESSION_ALREADY_COMPLETED');
-  if (session.status === 'cancelled') return session;
+  if (session.status === 'cancelled') {
+    const peers = runningPeers(sessions, session);
+    const groupFullyCancelled = !peers.some((p) => p.status === 'scheduled');
+    return { session, groupFullyCancelled };
+  }
 
   if (deduct) {
     const clients = await getAllClientsRaw();
@@ -669,7 +745,10 @@ export async function cancelSession(id: string, deduct: boolean): Promise<Sessio
   session.updatedAt = nowIso();
   sessions[idx] = session;
   await saveSessions(sessions);
-  return session;
+
+  const peers = runningPeers(sessions, session);
+  const groupFullyCancelled = !peers.some((p) => p.status === 'scheduled');
+  return { session, groupFullyCancelled };
 }
 
 export async function reassignSession(
@@ -706,6 +785,7 @@ export async function reassignSession(
     status: 'scheduled',
     deducted: false,
     reassigned: false,
+    runningGroupId: '',
     createdAt: ts,
     updatedAt: ts,
   };

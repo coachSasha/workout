@@ -8,7 +8,13 @@ import styled from 'styled-components';
 import type { Session, WorkoutType, Client, DayOff } from '../types';
 import { formatClientName } from '../utils/clientName';
 import { WORKOUT_LABELS, WORKOUT_OPTIONS, statusLabel } from '../utils/workoutLabels';
-import { hasAnyPackage, availableWorkoutTypes } from '../utils/packages';
+import { hasAnyPackage, clientsWithBalance } from '../utils/packages';
+import {
+  calendarSessionGroups,
+  groupTitle,
+  groupStatusLabel,
+  isRunningGroup,
+} from '../utils/sessionGroups';
 import {
   ModalOverlay,
   ModalBox,
@@ -22,6 +28,7 @@ import {
   ErrorText,
   ToolbarRow,
 } from './ui';
+import { MultiSelect } from './MultiSelect';
 import { theme } from '../theme';
 
 const locales = { ru };
@@ -51,6 +58,15 @@ const CalendarShell = styled.div<{ $hasAllDay: boolean }>`
 
 const ToolbarSlot = styled.div`
   flex-shrink: 0;
+`;
+
+const ParticipantRow = styled.div`
+  padding: 0.65rem 0;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border};
+
+  &:last-child {
+    border-bottom: none;
+  }
 `;
 
 const CalendarBody = styled.div`
@@ -96,6 +112,30 @@ const CalendarBody = styled.div`
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    touch-action: manipulation;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .rbc-time-slot,
+  .rbc-day-slot,
+  .rbc-timeslot-group {
+    touch-action: manipulation;
+  }
+
+  /* Клики по пустому слоту проходят сквозь слой событий (важно на мобильных) */
+  .rbc-events-container {
+    pointer-events: none;
+  }
+
+  .rbc-event,
+  .rbc-background-event {
+    pointer-events: auto;
+  }
+
+  @media (max-width: 768px) {
+    .rbc-timeslot-group {
+      min-height: 52px;
+    }
   }
 
   .rbc-time-view,
@@ -118,6 +158,7 @@ const CalendarBody = styled.div`
 
 export type CalendarResource =
   | { kind: 'session'; session: Session }
+  | { kind: 'runningGroup'; members: Session[] }
   | { kind: 'dayoff'; dayOff: DayOff };
 
 export interface CalendarEvent {
@@ -131,13 +172,18 @@ export interface CalendarEvent {
 
 function eventColor(resource: CalendarResource): string {
   if (resource.kind === 'dayoff') return theme.colors.dayOff;
-  const s = resource.session;
+  const s = resource.kind === 'session' ? resource.session : resource.members[0];
   const base =
     s.workoutType === 'solo'
       ? theme.colors.solo
       : s.workoutType === 'split'
         ? theme.colors.split
         : theme.colors.running;
+  if (resource.kind === 'runningGroup') {
+    if (resource.members.every((m) => m.status === 'cancelled')) return theme.colors.textMuted;
+    if (resource.members.every((m) => m.status === 'completed')) return theme.colors.success;
+    return base;
+  }
   if (s.status === 'cancelled') return theme.colors.textMuted;
   if (s.status === 'completed') return theme.colors.success;
   return base;
@@ -159,7 +205,7 @@ interface Props {
   isTrainer: boolean;
   onDateChange?: (date: Date) => void;
   onCreate: (data: {
-    clientId: string;
+    clientIds: string[];
     start: string;
     workoutType: WorkoutType;
   }) => Promise<void>;
@@ -209,40 +255,53 @@ export function SessionCalendar({
   const [dayOffDate, setDayOffDate] = useState('');
   const [dayOffNote, setDayOffNote] = useState('');
   const [clientId, setClientId] = useState('');
-  const [workoutType, setWorkoutType] = useState<WorkoutType>('solo');
+  const [clientIds, setClientIds] = useState<string[]>([]);
+  const [workoutType, setWorkoutType] = useState<WorkoutType | ''>('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const activeClientId = reassignMode ? clientId : clientId;
-  const workoutOptions = useMemo(() => {
-    const c = clients.find((x) => x.id === activeClientId);
-    if (!c) return [];
-    const available = availableWorkoutTypes(c);
-    return WORKOUT_OPTIONS.filter((o) => available.includes(o.value));
-  }, [clients, activeClientId]);
+  const workoutTypesAvailable = useMemo(() => {
+    const types: WorkoutType[] = [];
+    if (eligibleClients.some((c) => c.soloRemaining > 0)) types.push('solo');
+    if (eligibleClients.some((c) => c.splitRemaining > 0)) types.push('split');
+    if (eligibleClients.some((c) => c.runningRemaining > 0)) types.push('running');
+    return WORKOUT_OPTIONS.filter((o) => types.includes(o.value));
+  }, [eligibleClients]);
 
-  useEffect(() => {
-    if (workoutOptions.length > 0 && !workoutOptions.some((o) => o.value === workoutType)) {
-      setWorkoutType(workoutOptions[0].value);
-    }
-  }, [workoutOptions, workoutType]);
+  const clientsForType = useMemo(() => {
+    if (!workoutType) return [];
+    return clientsWithBalance(eligibleClients, workoutType);
+  }, [eligibleClients, workoutType]);
 
   const openAssignModal = (slot: Date, forReassign?: Session) => {
     setCreateSlot(slot);
     setReassignMode(forReassign ?? null);
-    const list = eligibleClients;
-    const first = list[0];
-    setClientId(first?.id ?? '');
-    if (first) {
-      const types = availableWorkoutTypes(first);
-      setWorkoutType(types[0] ?? 'solo');
+    if (forReassign) {
+      setWorkoutType(forReassign.workoutType);
+      setClientId('');
+      setClientIds([]);
+    } else {
+      setWorkoutType('');
+      setClientId('');
+      setClientIds([]);
     }
     setError('');
     setSelected(null);
   };
 
   const events: CalendarEvent[] = useMemo(() => {
-    const sessionEvents: CalendarEvent[] = sessions.map((s) => {
+    const sessionEvents: CalendarEvent[] = calendarSessionGroups(sessions).map((members) => {
+      const primary = members[0];
+      if (isRunningGroup(primary)) {
+        return {
+          id: `rg-${primary.runningGroupId}`,
+          title: groupTitle(members, isTrainer),
+          start: new Date(primary.startDatetime),
+          end: new Date(primary.endDatetime),
+          resource: { kind: 'runningGroup' as const, members },
+        };
+      }
+      const s = primary;
       const status =
         s.status === 'cancelled'
           ? s.deducted
@@ -281,8 +340,10 @@ export function SessionCalendar({
         backgroundColor: color,
         border: 'none',
         opacity:
-          event.resource.kind === 'session' &&
-          event.resource.session.status === 'cancelled'
+          (event.resource.kind === 'session' &&
+            event.resource.session.status === 'cancelled') ||
+          (event.resource.kind === 'runningGroup' &&
+            event.resource.members.every((m) => m.status === 'cancelled'))
             ? 0.55
             : 1,
         backgroundImage: isDayOff
@@ -317,11 +378,30 @@ export function SessionCalendar({
       setError('На это время уже есть запись');
       return;
     }
-    const pendingCancel = atSlot.find((s) => s.status === 'cancelled' && !s.reassigned);
-    if (pendingCancel) {
+    const soloPending = atSlot.find(
+      (s) => s.workoutType !== 'running' && s.status === 'cancelled' && !s.reassigned,
+    );
+    if (soloPending) {
       setError('Сначала переназначьте отменённую запись (клик по серой полосе в календаре)');
-      setSelected({ kind: 'session', session: pendingCancel });
+      setSelected({ kind: 'session', session: soloPending });
       return;
+    }
+    const runningGroupIds = [
+      ...new Set(
+        atSlot
+          .filter((s) => s.workoutType === 'running' && s.runningGroupId)
+          .map((s) => s.runningGroupId),
+      ),
+    ];
+    for (const gid of runningGroupIds) {
+      const group = atSlot.filter((s) => s.runningGroupId === gid);
+      const allCancelled = group.every((s) => s.status === 'cancelled');
+      const needsReassign = group.some((s) => !s.reassigned);
+      if (allCancelled && needsReassign) {
+        setError('Сначала переназначьте отменённую групповую запись');
+        setSelected({ kind: 'runningGroup', members: group });
+        return;
+      }
     }
     openAssignModal(slot.start);
   };
@@ -333,25 +413,25 @@ export function SessionCalendar({
     setError('');
   };
 
-  const handleClientChange = (id: string) => {
-    setClientId(id);
-    const c = clients.find((x) => x.id === id);
-    if (c) {
-      const types = availableWorkoutTypes(c);
-      if (types.length) setWorkoutType(types[0]);
-    }
+  const handleWorkoutTypeChange = (type: WorkoutType) => {
+    setWorkoutType(type);
+    setClientId('');
+    setClientIds([]);
   };
 
   const handleSaveAssign = async () => {
-    if (!clientId || !workoutOptions.length) return;
+    if (!workoutType) return;
+    const ids =
+      workoutType === 'running' ? clientIds : clientId ? [clientId] : [];
+    if (!ids.length) return;
     setLoading(true);
     setError('');
     try {
       if (reassignMode) {
-        await onReassign(reassignMode.id, { clientId, workoutType });
+        await onReassign(reassignMode.id, { clientId: ids[0], workoutType });
       } else if (createSlot) {
         await onCreate({
-          clientId,
+          clientIds: ids,
           start: createSlot.toISOString(),
           workoutType,
         });
@@ -372,12 +452,11 @@ export function SessionCalendar({
     setError('');
   };
 
-  const handleConfirm = async () => {
-    if (!selected || selected.kind !== 'session') return;
+  const handleConfirm = async (sessionId: string) => {
     setLoading(true);
     setError('');
     try {
-      await onConfirm(selected.session.id);
+      await onConfirm(sessionId);
       setSelected(null);
     } catch (e: unknown) {
       const err = e as { data?: { message?: string } };
@@ -387,12 +466,11 @@ export function SessionCalendar({
     }
   };
 
-  const handleCancel = async (deduct: boolean) => {
-    if (!selected || selected.kind !== 'session') return;
+  const handleCancel = async (sessionId: string, deduct: boolean) => {
     setLoading(true);
     setError('');
     try {
-      await onCancel(selected.session.id, deduct);
+      await onCancel(sessionId, deduct);
       setSelected(null);
     } catch (e: unknown) {
       const err = e as { data?: { message?: string } };
@@ -460,6 +538,7 @@ export function SessionCalendar({
             onDateChange?.(d);
           }}
           selectable={isTrainer}
+          longPressThreshold={1}
           onSelectSlot={handleSelectSlot}
           onSelectEvent={handleSelectEvent}
           eventPropGetter={eventStyleGetter}
@@ -534,32 +613,59 @@ export function SessionCalendar({
             ) : (
               <>
                 <Field>
-                  <Label>Клиент</Label>
-                  <Select
-                    value={clientId}
-                    onChange={(e) => handleClientChange(e.target.value)}
-                  >
-                    {eligibleClients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {formatClientName(c)} (С:{c.soloRemaining} П:{c.splitRemaining}{' '}
-                        Б:{c.runningRemaining})
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field>
                   <Label>Тип тренировки</Label>
                   <Select
                     value={workoutType}
-                    onChange={(e) => setWorkoutType(e.target.value as WorkoutType)}
-                    disabled={workoutOptions.length === 0}
+                    onChange={(e) =>
+                      handleWorkoutTypeChange(e.target.value as WorkoutType)
+                    }
+                    disabled={reassignMode !== null}
                   >
-                    {workoutOptions.map((o) => (
+                    <option value="">— выберите тип —</option>
+                    {workoutTypesAvailable.map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
                       </option>
                     ))}
                   </Select>
+                </Field>
+                <Field>
+                  <Label>
+                    {workoutType === 'running' ? 'Клиенты' : 'Клиент'}
+                  </Label>
+                  {!workoutType ? (
+                    <Select disabled value="">
+                      <option value="">Сначала выберите тип тренировки</option>
+                    </Select>
+                  ) : workoutType === 'running' ? (
+                    <MultiSelect
+                      value={clientIds}
+                      onChange={setClientIds}
+                      disabled={clientsForType.length === 0}
+                      placeholder="— выберите клиентов —"
+                      options={clientsForType.map((c) => ({
+                        value: c.id,
+                        label: `${formatClientName(c)} (бег: ${c.runningRemaining})`,
+                      }))}
+                    />
+                  ) : (
+                    <Select
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      disabled={clientsForType.length === 0}
+                    >
+                      <option value="">— выберите клиента —</option>
+                      {clientsForType.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {formatClientName(c)} (остаток:{' '}
+                          {workoutType === 'solo'
+                            ? c.soloRemaining
+                            : c.splitRemaining}
+                          )
+                        </option>
+                      ))}
+                    </Select>
+                  )}
                 </Field>
               </>
             )}
@@ -571,7 +677,11 @@ export function SessionCalendar({
               <Button
                 onClick={handleSaveAssign}
                 disabled={
-                  loading || !clientId || !workoutOptions.length
+                  loading ||
+                  !workoutType ||
+                  (workoutType === 'running'
+                    ? clientIds.length === 0
+                    : !clientId)
                 }
                 $block
               >
@@ -599,12 +709,17 @@ export function SessionCalendar({
             <ModalActions $stacked>
               {isTrainer && selected.session.status === 'scheduled' && (
                 <>
-                  <Button $variant="success" onClick={handleConfirm} disabled={loading} $block>
+                  <Button
+                    $variant="success"
+                    onClick={() => handleConfirm(selected.session.id)}
+                    disabled={loading}
+                    $block
+                  >
                     Подтвердить (списать)
                   </Button>
                   <Button
                     $variant="danger"
-                    onClick={() => handleCancel(true)}
+                    onClick={() => handleCancel(selected.session.id, true)}
                     disabled={loading}
                     $block
                   >
@@ -612,7 +727,7 @@ export function SessionCalendar({
                   </Button>
                   <Button
                     $variant="secondary"
-                    onClick={() => handleCancel(false)}
+                    onClick={() => handleCancel(selected.session.id, false)}
                     disabled={loading}
                     $block
                   >
@@ -641,6 +756,87 @@ export function SessionCalendar({
                   <p style={{ margin: 0, color: theme.colors.textMuted, fontSize: '0.9rem' }}>
                     На этот слот уже назначен другой клиент.
                   </p>
+                )}
+              <Button $variant="ghost" onClick={() => setSelected(null)} $block>
+                Закрыть
+              </Button>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
+      {selected?.kind === 'runningGroup' && (
+        <ModalOverlay onClick={() => setSelected(null)}>
+          <ModalBox onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>Бег — группа</ModalTitle>
+            <p style={{ margin: 0, color: theme.colors.textMuted }}>
+              {format(new Date(selected.members[0].startDatetime), 'd MMMM yyyy, HH:mm', {
+                locale: ru,
+              })}
+              <br />
+              {groupStatusLabel(selected.members)}
+            </p>
+            {selected.members.map((m) => (
+              <ParticipantRow key={m.id}>
+                <strong>{m.clientName}</strong>
+                <br />
+                <span style={{ color: theme.colors.textMuted, fontSize: '0.85rem' }}>
+                  {statusLabel(m.status, m.deducted)}
+                </span>
+                {isTrainer && m.status === 'scheduled' && (
+                  <ModalActions $stacked style={{ marginTop: '0.5rem' }}>
+                    <Button
+                      $variant="danger"
+                      onClick={() => handleCancel(m.id, true)}
+                      disabled={loading}
+                      $block
+                    >
+                      {m.clientName}: отменить со списанием
+                    </Button>
+                    <Button
+                      $variant="secondary"
+                      onClick={() => handleCancel(m.id, false)}
+                      disabled={loading}
+                      $block
+                    >
+                      {m.clientName}: отменить без списания
+                    </Button>
+                  </ModalActions>
+                )}
+              </ParticipantRow>
+            ))}
+            {error && <ErrorText>{error}</ErrorText>}
+            <ModalActions $stacked>
+              {isTrainer &&
+                selected.members.some((m) => m.status === 'scheduled') && (
+                  <Button
+                    $variant="success"
+                    onClick={() =>
+                      handleConfirm(
+                        selected.members.find((m) => m.status === 'scheduled')?.id ??
+                          selected.members[0].id,
+                      )
+                    }
+                    disabled={loading}
+                    $block
+                  >
+                    Подтвердить всех пришедших (списать с каждого)
+                  </Button>
+                )}
+              {isTrainer &&
+                selected.members.every((m) => m.status === 'cancelled') &&
+                selected.members.some((m) => !m.reassigned) && (
+                  <Button
+                    onClick={() =>
+                      openAssignModal(
+                        new Date(selected.members[0].startDatetime),
+                        selected.members[0],
+                      )
+                    }
+                    $block
+                  >
+                    Назначить на слот заново
+                  </Button>
                 )}
               <Button $variant="ghost" onClick={() => setSelected(null)} $block>
                 Закрыть

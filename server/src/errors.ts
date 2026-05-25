@@ -37,6 +37,14 @@ export function mapApiError(err: unknown): {
       };
     case 'DAY_OFF_EXISTS':
       return { status: 400, message: 'На этот день выходной уже отмечен', code: msg };
+    case 'CLIENT_IDS_REQUIRED':
+      return { status: 400, message: 'Выберите хотя бы одного клиента', code: msg };
+    case 'SINGLE_CLIENT_ONLY':
+      return {
+        status: 400,
+        message: 'Для соло и сплит можно выбрать только одного клиента',
+        code: msg,
+      };
     case 'INVALID_GOOGLE_PRIVATE_KEY_FORMAT':
       return {
         status: 503,

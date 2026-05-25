@@ -18,14 +18,23 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.post<{ Body: { clientId?: string; start?: string; workoutType?: WorkoutType } }>(
+  app.post<{
+    Body: {
+      clientId?: string;
+      clientIds?: string[];
+      start?: string;
+      workoutType?: WorkoutType;
+    };
+  }>(
     '/api/sessions',
     { preHandler: requireTrainer },
     async (request, reply) => {
-      const { clientId, start, workoutType } = request.body ?? {};
-      if (!clientId || !start || !workoutType) {
+      const { clientId, clientIds, start, workoutType } = request.body ?? {};
+      const ids =
+        clientIds?.length ? clientIds : clientId ? [clientId] : [];
+      if (!ids.length || !start || !workoutType) {
         return reply.status(400).send({
-          message: 'clientId, start и workoutType обязательны',
+          message: 'clientIds (или clientId), start и workoutType обязательны',
           code: 'VALIDATION',
         });
       }
@@ -33,7 +42,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ message: 'Неверный тип тренировки', code: 'VALIDATION' });
       }
       try {
-        return await sheets.createSession({ clientId, start, workoutType });
+        return await sheets.createSessions({ clientIds: ids, start, workoutType });
       } catch (e) {
         const err = mapApiError(e);
         return reply.status(err.status).send(err);

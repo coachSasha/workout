@@ -101,6 +101,12 @@ export const Select = styled.select`
   color: ${({ theme }) => theme.colors.text};
   font-size: 16px;
   font-family: inherit;
+  appearance: auto;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
 
   &:focus {
     outline: none;
