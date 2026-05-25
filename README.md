@@ -87,12 +87,27 @@ npm run dev:client
 
 ## Production
 
+Один процесс отдаёт API и собранный фронт (`client/dist`). Локально:
+
 ```bash
 npm run build
-cd server && npm start
+npm start --prefix server
 ```
 
-Раздавайте `client/dist` через nginx или укажите `CLIENT_URL` на прод-домен.
+Откройте http://localhost:3001 (не Vite). Для разработки UI по-прежнему `npm run dev` (Vite :5173 + proxy `/api`).
+
+### Render (Web Service)
+
+| Поле | Значение |
+|------|----------|
+| **Build Command** | `npm run build:render` |
+| **Start Command** | `npm start --prefix server` |
+| **CLIENT_URL** | `https://ваш-сервис.onrender.com` (без `/` в конце) |
+| **NODE_ENV** | `production` |
+
+`build:render` ставит dev-зависимости (`@types/node`, `typescript`) даже при `NODE_ENV=production`.
+
+Проверка: `/api/health` → `{"ok":true}`, `/` и `/login` → React-приложение.
 
 ## Правила бизнес-логики
 
