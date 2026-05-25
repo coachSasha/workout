@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { loadGoogleCredentials } from './googleCredentials.js';
 
 function required(name: string): string {
   const v = process.env[name];
@@ -6,11 +7,13 @@ function required(name: string): string {
   return v;
 }
 
+const google = loadGoogleCredentials();
+
 export const config = {
   port: parseInt(process.env.PORT ?? '3001', 10),
   spreadsheetId: required('SPREADSHEET_ID'),
-  googleEmail: required('GOOGLE_SERVICE_ACCOUNT_EMAIL'),
-  googlePrivateKey: required('GOOGLE_PRIVATE_KEY').replace(/\\n/g, '\n'),
+  googleEmail: google.email,
+  googlePrivateKey: google.privateKey,
   trainerPassword: required('TRAINER_PASSWORD'),
   jwtSecret: required('JWT_SECRET'),
   clientUrl: process.env.CLIENT_URL ?? 'http://localhost:5173',

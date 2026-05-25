@@ -107,7 +107,15 @@ npm start --prefix server
 
 `build:render` ставит dev-зависимости (`@types/node`, `typescript`) даже при `NODE_ENV=production`.
 
-Проверка: `/api/health` → `{"ok":true}`, `/` и `/login` → React-приложение.
+Проверка: `/api/health` → `{"ok":true}`, `/api/health/sheets` → `{"ok":true,"clientsCount":N}` (проверка Google Sheets), `/` и `/login` → React-приложение.
+
+**Google на Render (если `ERR_OSSL_UNSUPPORTED` / `DECODER routines::unsupported`):**
+
+1. **Проще всего:** одна переменная `GOOGLE_SERVICE_ACCOUNT_JSON` — скопируйте **весь** скачанный JSON service account **в одну строку** (без переносов между `{` и `}`). Можно удалить переменные `GOOGLE_SERVICE_ACCOUNT_EMAIL` и `GOOGLE_PRIVATE_KEY`.
+2. **Или** `GOOGLE_PRIVATE_KEY` = только поле `private_key` из JSON, с `\n` вместо переносов, в кавычках как в `.env.example`.
+3. Email service account — **Редактор** в Google Таблице.
+
+Проверка: `/api/health/sheets` → `{"ok":true,"clientsCount":...}`.
 
 ## Правила бизнес-логики
 

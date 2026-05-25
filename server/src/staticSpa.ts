@@ -19,6 +19,7 @@ export async function registerClientSpa(app: FastifyInstance): Promise<void> {
   await app.register(fastifyStatic, {
     root: clientDistPath,
     prefix: '/',
+    wildcard: false,
   });
 
   app.setNotFoundHandler(async (request, reply) => {
