@@ -2,42 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireTrainer, isTrainerAuthenticated } from '../middleware/auth.js';
 import * as sheets from '../sheets/service.js';
 import type { WorkoutType } from '../types.js';
-
-function mapSheetError(err: unknown): { status: number; message: string; code: string } {
-  const msg = err instanceof Error ? err.message : 'UNKNOWN';
-  switch (msg) {
-    case 'INSUFFICIENT_BALANCE':
-      return { status: 400, message: 'Недостаточно тренировок в пакете', code: msg };
-    case 'SESSION_NOT_FOUND':
-      return { status: 404, message: 'Запись не найдена', code: msg };
-    case 'SESSION_CANCELLED':
-      return { status: 400, message: 'Запись отменена', code: msg };
-    case 'SESSION_ALREADY_COMPLETED':
-      return { status: 400, message: 'Тренировка уже проведена', code: msg };
-    case 'CLIENT_NOT_FOUND':
-      return { status: 404, message: 'Клиент не найден', code: msg };
-    case 'DAY_OFF':
-      return { status: 400, message: 'В этот день выходной', code: msg };
-    case 'SESSION_NOT_CANCELLED':
-      return { status: 400, message: 'Запись не отменена', code: msg };
-    case 'SESSION_ALREADY_REASSIGNED':
-      return {
-        status: 400,
-        message: 'На этот слот уже назначен другой клиент',
-        code: msg,
-      };
-    case 'SLOT_OCCUPIED':
-      return { status: 400, message: 'На это время уже есть запись', code: msg };
-    case 'SLOT_NEEDS_REASSIGN':
-      return {
-        status: 400,
-        message: 'Сначала переназначьте отменённую запись через карточку в календаре',
-        code: msg,
-      };
-    default:
-      return { status: 500, message: 'Внутренняя ошибка', code: 'INTERNAL' };
-  }
-}
+import { mapApiError } from '../errors.js';
 
 export async function sessionRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { from?: string; to?: string } }>(
@@ -70,7 +35,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       try {
         return await sheets.createSession({ clientId, start, workoutType });
       } catch (e) {
-        const err = mapSheetError(e);
+        const err = mapApiError(e);
         return reply.status(err.status).send(err);
       }
     },
@@ -83,7 +48,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       try {
         return await sheets.confirmSession(request.params.id);
       } catch (e) {
-        const err = mapSheetError(e);
+        const err = mapApiError(e);
         return reply.status(err.status).send(err);
       }
     },
@@ -97,7 +62,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
         const deduct = request.body?.deduct === true;
         return await sheets.cancelSession(request.params.id, deduct);
       } catch (e) {
-        const err = mapSheetError(e);
+        const err = mapApiError(e);
         return reply.status(err.status).send(err);
       }
     },
@@ -136,7 +101,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
             code: msg,
           });
         }
-        const err = mapSheetError(e);
+        const err = mapApiError(e);
         return reply.status(err.status).send(err);
       }
     },
