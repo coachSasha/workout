@@ -6,7 +6,9 @@
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
     "build": "npm run build --prefix server && npm run build --prefix client",
-    "install:all": "npm install && npm install --prefix server && npm install --prefix client"
+    "build:render": "npm run install:all:render && npm run build",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "install:all:render": "npm install && npm install --prefix server --include=dev && npm install --prefix client --include=dev"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

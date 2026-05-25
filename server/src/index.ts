@@ -8,6 +8,7 @@ import { clientRoutes } from './routes/clients.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { publicRoutes } from './routes/public.js';
 import { daysOffRoutes } from './routes/daysOff.js';
+import { registerClientSpa } from './staticSpa.js';
 
 const app = Fastify({ logger: true });
 
@@ -25,6 +26,8 @@ await publicRoutes(app);
 await daysOffRoutes(app);
 
 app.get('/api/health', async () => ({ ok: true }));
+
+await registerClientSpa(app);
 
 try {
   const initMessages = await initSpreadsheet();
