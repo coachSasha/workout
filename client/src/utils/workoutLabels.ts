@@ -12,14 +12,14 @@ export const WORKOUT_OPTIONS: { value: WorkoutType; label: string }[] = [
   { value: 'running', label: WORKOUT_LABELS.running },
 ];
 
-export function statusLabel(status: string): string {
+export function statusLabel(status: string, deducted?: boolean): string {
   switch (status) {
     case 'scheduled':
       return 'Запланировано';
     case 'completed':
       return 'Проведено';
     case 'cancelled':
-      return 'Отменено';
+      return deducted ? 'Отменено (списано)' : 'Отменено';
     default:
       return status;
   }

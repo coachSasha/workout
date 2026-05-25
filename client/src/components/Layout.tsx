@@ -19,14 +19,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <HeaderBar>
-        <Link to="/">
+        <Link to="/" style={{ textDecoration: 'none' }}>
           <Logo>Календарь тренера</Logo>
         </Link>
         <NavActions>
           {isAuthenticated ? (
             <>
               <Link to="/lk" style={{ textDecoration: 'none' }}>
-                <Button $variant="ghost" type="button">
+                <Button $variant="secondary" type="button">
                   ЛК
                 </Button>
               </Link>
@@ -35,8 +35,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </Button>
             </>
           ) : (
-            <Link to="/login">
-              <Button>Войти</Button>
+            <Link to="/login" style={{ textDecoration: 'none' }}>
+              <Button type="button">Войти</Button>
             </Link>
           )}
         </NavActions>

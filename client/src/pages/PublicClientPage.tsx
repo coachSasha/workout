@@ -4,6 +4,7 @@ import { ru } from 'date-fns/locale';
 import { useGetPublicClientQuery } from '../api/baseApi';
 import { formatClientName } from '../utils/clientName';
 import { WORKOUT_LABELS } from '../utils/workoutLabels';
+import { historyStatusLabel } from '../utils/historyStatus';
 import { Page, Card, Table, TableWrap, PageTitle } from '../components/ui';
 import styled from 'styled-components';
 import { theme } from '../theme';
@@ -103,7 +104,7 @@ export function PublicClientPage() {
           </TableWrap>
         )}
 
-        <h2 style={{ margin: '1.25rem 0 0.75rem', fontSize: '1rem' }}>Прошедшие</h2>
+        <h2 style={{ margin: '1.25rem 0 0.75rem', fontSize: '1rem' }}>История</h2>
         {data.history.length === 0 ? (
           <p style={{ color: theme.colors.textMuted }}>История пуста.</p>
         ) : (
@@ -113,6 +114,7 @@ export function PublicClientPage() {
                 <tr>
                   <th>Дата</th>
                   <th>Тип</th>
+                  <th>Статус</th>
                 </tr>
               </thead>
               <tbody>
@@ -122,6 +124,7 @@ export function PublicClientPage() {
                       {format(new Date(h.date), 'd MMMM yyyy, HH:mm', { locale: ru })}
                     </td>
                     <td>{WORKOUT_LABELS[h.workoutType]}</td>
+                    <td>{historyStatusLabel(h.historyStatus)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -7,6 +7,7 @@ import { authRoutes } from './routes/auth.js';
 import { clientRoutes } from './routes/clients.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { publicRoutes } from './routes/public.js';
+import { daysOffRoutes } from './routes/daysOff.js';
 
 const app = Fastify({ logger: true });
 
@@ -21,6 +22,7 @@ await authRoutes(app);
 await clientRoutes(app);
 await sessionRoutes(app);
 await publicRoutes(app);
+await daysOffRoutes(app);
 
 app.get('/api/health', async () => ({ ok: true }));
 

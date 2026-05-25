@@ -6,6 +6,7 @@ import { cacheGet, cacheSet, cacheInvalidate } from '../cache.js';
 import type {
   Client,
   Session,
+  DayOff,
   WorkoutType,
   SessionStatus,
   CompletedHistoryItem,
@@ -35,9 +36,14 @@ const SESSION_HEADERS = [
   'end_datetime',
   'workout_type',
   'status',
+  'deducted',
   'created_at',
   'updated_at',
+  'reassigned',
 ];
+
+const DAYS_OFF_SHEET = 'DaysOff';
+const DAYS_OFF_HEADERS = ['id', 'date', 'note', 'created_at'];
 
 function getSheets(): sheets_v4.Sheets {
   const auth = new google.auth.JWT({
@@ -112,6 +118,8 @@ async function getClientHeaders(): Promise<string[]> {
 }
 
 function rowToSession(row: string[]): Session {
+  const hasDeductedCol = row.length > 9;
+  const hasReassignedCol = row.length > 10;
   return {
     id: row[0] ?? '',
     clientId: row[1] ?? '',
@@ -120,8 +128,10 @@ function rowToSession(row: string[]): Session {
     endDatetime: row[4] ?? '',
     workoutType: (row[5] ?? 'solo') as WorkoutType,
     status: (row[6] ?? 'scheduled') as SessionStatus,
-    createdAt: row[7] ?? '',
-    updatedAt: row[8] ?? '',
+    deducted: hasDeductedCol ? (row[7] ?? '').toLowerCase() === 'true' : false,
+    createdAt: hasDeductedCol ? (row[8] ?? '') : (row[7] ?? ''),
+    updatedAt: hasDeductedCol ? (row[9] ?? '') : (row[8] ?? ''),
+    reassigned: hasReassignedCol ? (row[10] ?? '').toLowerCase() === 'true' : false,
   };
 }
 
@@ -134,9 +144,43 @@ function sessionToRow(s: Session): string[] {
     s.endDatetime,
     s.workoutType,
     s.status,
+    String(s.deducted ?? false),
     s.createdAt,
     s.updatedAt,
+    String(s.reassigned ?? false),
   ];
+}
+
+function enrichSessions(sessions: Session[]): Session[] {
+  const scheduledStarts = new Set(
+    sessions.filter((s) => s.status === 'scheduled').map((s) => s.startDatetime),
+  );
+  return sessions.map((s) => ({
+    ...s,
+    reassigned:
+      s.reassigned ||
+      (s.status === 'cancelled' && scheduledStarts.has(s.startDatetime)),
+  }));
+}
+
+function sessionsAtStart(sessions: Session[], start: string): Session[] {
+  return sessions.filter((s) => s.startDatetime === start);
+}
+
+function assertSlotHasNoScheduled(sessions: Session[], start: string): void {
+  if (sessionsAtStart(sessions, start).some((s) => s.status === 'scheduled')) {
+    throw new Error('SLOT_OCCUPIED');
+  }
+}
+
+function assertSlotAvailableForNewBooking(sessions: Session[], start: string): void {
+  const atSlot = sessionsAtStart(sessions, start);
+  if (atSlot.some((s) => s.status === 'scheduled')) {
+    throw new Error('SLOT_OCCUPIED');
+  }
+  if (atSlot.some((s) => s.status === 'cancelled' && !s.reassigned)) {
+    throw new Error('SLOT_NEEDS_REASSIGN');
+  }
 }
 
 function nowIso(): string {
@@ -180,6 +224,11 @@ async function readSheet(sheetName: string): Promise<string[][]> {
 
 async function writeAllRows(sheetName: string, headers: string[], dataRows: string[][]): Promise<void> {
   const sheets = getSheets();
+  // Очистить старые строки данных — иначе Google Sheets оставляет «хвост» после удаления
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: config.spreadsheetId,
+    range: `${sheetName}!A2:Z`,
+  });
   const values = [headers, ...dataRows];
   await sheets.spreadsheets.values.update({
     spreadsheetId: config.spreadsheetId,
@@ -232,6 +281,7 @@ export async function initSpreadsheet(): Promise<string[]> {
   const messages: string[] = [];
   const clients = await ensureSheetWithHeaders(CLIENTS_SHEET, CLIENT_HEADERS);
   const sessions = await ensureSheetWithHeaders(SESSIONS_SHEET, SESSION_HEADERS);
+  const daysOff = await ensureSheetWithHeaders(DAYS_OFF_SHEET, DAYS_OFF_HEADERS);
 
   if (clients === 'created') messages.push(`Создан лист ${CLIENTS_SHEET} с заголовками`);
   else if (clients === 'headers_written') messages.push(`Записаны заголовки на листе ${CLIENTS_SHEET}`);
@@ -239,7 +289,10 @@ export async function initSpreadsheet(): Promise<string[]> {
   if (sessions === 'created') messages.push(`Создан лист ${SESSIONS_SHEET} с заголовками`);
   else if (sessions === 'headers_written') messages.push(`Записаны заголовки на листе ${SESSIONS_SHEET}`);
 
-  if (messages.length === 0) messages.push('Листы Clients и Sessions уже настроены');
+  if (daysOff === 'created') messages.push(`Создан лист ${DAYS_OFF_SHEET} с заголовками`);
+  else if (daysOff === 'headers_written') messages.push(`Записаны заголовки на листе ${DAYS_OFF_SHEET}`);
+
+  if (messages.length === 0) messages.push('Листы Clients, Sessions и DaysOff уже настроены');
 
   if (await normalizeClientsSheet()) {
     messages.push('Данные Clients приведены к новой схеме (фамилия, без share_enabled)');
@@ -290,7 +343,7 @@ async function getAllSessionsRaw(): Promise<Session[]> {
   if (cached) return cached;
 
   const rows = await readSheet(SESSIONS_SHEET);
-  const sessions = rows.filter((r) => r[0]).map(rowToSession);
+  const sessions = enrichSessions(rows.filter((r) => r[0]).map(rowToSession));
   cacheSet(cacheKey, sessions, config.cacheTtlSeconds);
   return sessions;
 }
@@ -411,6 +464,87 @@ export async function getSessionsInRange(from: string, to: string): Promise<Sess
   });
 }
 
+export function toDateKey(isoOrDate: string): string {
+  return isoOrDate.slice(0, 10);
+}
+
+function rowToDayOff(row: string[]): DayOff {
+  return {
+    id: row[0] ?? '',
+    date: row[1] ?? '',
+    note: row[2] ?? '',
+    createdAt: row[3] ?? '',
+  };
+}
+
+function dayOffToRow(d: DayOff): string[] {
+  return [d.id, d.date, d.note, d.createdAt];
+}
+
+async function getAllDaysOffRaw(): Promise<DayOff[]> {
+  const cacheKey = 'daysoff:all';
+  const cached = cacheGet<DayOff[]>(cacheKey);
+  if (cached) return cached;
+
+  const rows = await readSheet(DAYS_OFF_SHEET);
+  const items = rows.filter((r) => r[0]).map(rowToDayOff);
+  cacheSet(cacheKey, items, config.cacheTtlSeconds);
+  return items;
+}
+
+async function saveDaysOff(items: DayOff[]): Promise<void> {
+  await writeAllRows(DAYS_OFF_SHEET, DAYS_OFF_HEADERS, items.map(dayOffToRow));
+  cacheInvalidate('daysoff');
+}
+
+export async function getDaysOffInRange(from: string, to: string): Promise<DayOff[]> {
+  const fromKey = toDateKey(from);
+  const toKey = toDateKey(to);
+  const items = await getAllDaysOffRaw();
+  return items.filter((d) => d.date >= fromKey && d.date <= toKey);
+}
+
+export async function isDateDayOff(dateKey: string): Promise<boolean> {
+  const items = await getAllDaysOffRaw();
+  return items.some((d) => d.date === dateKey);
+}
+
+export async function createDayOff(data: { date: string; note?: string }): Promise<DayOff> {
+  const dateKey = toDateKey(data.date);
+  const items = await getAllDaysOffRaw();
+  if (items.some((d) => d.date === dateKey)) {
+    throw new Error('DAY_OFF_EXISTS');
+  }
+
+  const dayOff: DayOff = {
+    id: uuidv4(),
+    date: dateKey,
+    note: (data.note ?? '').trim(),
+    createdAt: nowIso(),
+  };
+  items.push(dayOff);
+  await saveDaysOff(items);
+  return dayOff;
+}
+
+export async function deleteDayOff(id: string): Promise<boolean> {
+  cacheInvalidate('daysoff');
+  const items = await getAllDaysOffRaw();
+  const idx = items.findIndex((d) => d.id === id);
+  if (idx === -1) return false;
+  items.splice(idx, 1);
+  await saveDaysOff(items);
+  return true;
+}
+
+function assertClientHasPackage(
+  client: Client,
+  workoutType: WorkoutType,
+): void {
+  const field = remainingField(workoutType);
+  if (client[field] <= 0) throw new Error('INSUFFICIENT_BALANCE');
+}
+
 export async function createSession(data: {
   clientId: string;
   start: string;
@@ -419,7 +553,14 @@ export async function createSession(data: {
   const client = await getClientById(data.clientId);
   if (!client) throw new Error('CLIENT_NOT_FOUND');
 
+  if (await isDateDayOff(toDateKey(data.start))) {
+    throw new Error('DAY_OFF');
+  }
+
+  assertClientHasPackage(client, data.workoutType);
+
   const sessions = await getAllSessionsRaw();
+  assertSlotAvailableForNewBooking(sessions, data.start);
   const ts = nowIso();
   const session: Session = {
     id: uuidv4(),
@@ -429,6 +570,8 @@ export async function createSession(data: {
     endDatetime: addMinutes(data.start, config.slotDurationMinutes),
     workoutType: data.workoutType,
     status: 'scheduled',
+    deducted: false,
+    reassigned: false,
     createdAt: ts,
     updatedAt: ts,
   };
@@ -461,6 +604,7 @@ export async function confirmSession(id: string): Promise<Session> {
 
   client[field] -= 1;
   session.status = 'completed';
+  session.deducted = false;
   session.updatedAt = nowIso();
 
   clients[clientIdx] = client;
@@ -471,7 +615,31 @@ export async function confirmSession(id: string): Promise<Session> {
   return session;
 }
 
-export async function cancelSession(id: string): Promise<Session> {
+function isClientHistory(s: Session, clientId: string): boolean {
+  return (
+    s.clientId === clientId &&
+    (s.status === 'completed' || s.status === 'cancelled')
+  );
+}
+
+function sessionToHistoryItem(s: Session): CompletedHistoryItem {
+  let historyStatus: CompletedHistoryItem['historyStatus'];
+  if (s.status === 'completed') {
+    historyStatus = 'completed';
+  } else if (s.deducted) {
+    historyStatus = 'cancelled_deducted';
+  } else {
+    historyStatus = 'cancelled_free';
+  }
+  return {
+    id: s.id,
+    date: s.startDatetime,
+    workoutType: s.workoutType,
+    historyStatus,
+  };
+}
+
+export async function cancelSession(id: string, deduct: boolean): Promise<Session> {
   const sessions = await getAllSessionsRaw();
   const idx = sessions.findIndex((s) => s.id === id);
   if (idx === -1) throw new Error('SESSION_NOT_FOUND');
@@ -480,11 +648,88 @@ export async function cancelSession(id: string): Promise<Session> {
   if (session.status === 'completed') throw new Error('SESSION_ALREADY_COMPLETED');
   if (session.status === 'cancelled') return session;
 
+  if (deduct) {
+    const clients = await getAllClientsRaw();
+    const clientIdx = clients.findIndex((c) => c.id === session.clientId);
+    if (clientIdx === -1) throw new Error('CLIENT_NOT_FOUND');
+
+    const client = clients[clientIdx];
+    const field = remainingField(session.workoutType);
+    if (client[field] <= 0) throw new Error('INSUFFICIENT_BALANCE');
+
+    client[field] -= 1;
+    clients[clientIdx] = client;
+    await saveClients(clients);
+    session.deducted = true;
+  } else {
+    session.deducted = false;
+  }
+
   session.status = 'cancelled';
   session.updatedAt = nowIso();
   sessions[idx] = session;
   await saveSessions(sessions);
   return session;
+}
+
+export async function reassignSession(
+  id: string,
+  data: { clientId: string; workoutType: WorkoutType },
+): Promise<Session> {
+  const sessions = await getAllSessionsRaw();
+  const idx = sessions.findIndex((s) => s.id === id);
+  if (idx === -1) throw new Error('SESSION_NOT_FOUND');
+
+  const oldSession = sessions[idx];
+  if (oldSession.status !== 'cancelled') throw new Error('SESSION_NOT_CANCELLED');
+  if (oldSession.reassigned) throw new Error('SESSION_ALREADY_REASSIGNED');
+
+  assertSlotHasNoScheduled(sessions, oldSession.startDatetime);
+
+  const client = await getClientById(data.clientId);
+  if (!client) throw new Error('CLIENT_NOT_FOUND');
+
+  assertClientHasPackage(client, data.workoutType);
+
+  // Старую отменённую запись не трогаем — она остаётся в истории первого клиента
+  const ts = nowIso();
+  oldSession.reassigned = true;
+  oldSession.updatedAt = ts;
+  sessions[idx] = oldSession;
+  const newSession: Session = {
+    id: uuidv4(),
+    clientId: client.id,
+    clientName: formatClientName(client),
+    startDatetime: oldSession.startDatetime,
+    endDatetime: oldSession.endDatetime,
+    workoutType: data.workoutType,
+    status: 'scheduled',
+    deducted: false,
+    reassigned: false,
+    createdAt: ts,
+    updatedAt: ts,
+  };
+  sessions.push(newSession);
+  await saveSessions(sessions);
+  return newSession;
+}
+
+export async function addClientPackages(
+  id: string,
+  data: { addSolo?: number; addSplit?: number; addRunning?: number },
+): Promise<Client | null> {
+  const clients = await getAllClientsRaw();
+  const idx = clients.findIndex((c) => c.id === id);
+  if (idx === -1) return null;
+
+  const c = clients[idx];
+  if (data.addSolo) c.soloRemaining += Math.max(0, data.addSolo);
+  if (data.addSplit) c.splitRemaining += Math.max(0, data.addSplit);
+  if (data.addRunning) c.runningRemaining += Math.max(0, data.addRunning);
+
+  clients[idx] = c;
+  await saveClients(clients);
+  return c;
 }
 
 export async function getClientWithHistory(id: string): Promise<{
@@ -496,12 +741,8 @@ export async function getClientWithHistory(id: string): Promise<{
 
   const sessions = await getAllSessionsRaw();
   const history = sessions
-    .filter((s) => s.clientId === id && s.status === 'completed')
-    .map((s) => ({
-      id: s.id,
-      date: s.startDatetime,
-      workoutType: s.workoutType,
-    }))
+    .filter((s) => isClientHistory(s, id))
+    .map(sessionToHistoryItem)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return { client, history };
@@ -520,12 +761,8 @@ export async function getPublicClientView(token: string): Promise<PublicClientVi
     .sort((a, b) => new Date(a.startDatetime).getTime() - new Date(b.startDatetime).getTime());
 
   const history = clientSessions
-    .filter((s) => s.status === 'completed')
-    .map((s) => ({
-      id: s.id,
-      date: s.startDatetime,
-      workoutType: s.workoutType,
-    }))
+    .filter((s) => s.status === 'completed' || s.status === 'cancelled')
+    .map(sessionToHistoryItem)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return {

@@ -1,12 +1,14 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   useGetClientsQuery,
   useCreateClientMutation,
-  useUpdateClientMutation,
+  useAddPackagesMutation,
 } from '../api/baseApi';
 import { formatClientName } from '../utils/clientName';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { WORKOUT_LABELS } from '../utils/workoutLabels';
+import type { Client, WorkoutType } from '../types';
 import {
   Page,
   Card,
@@ -16,13 +18,17 @@ import {
   Field,
   Label,
   Input,
-  InlineInput,
   MobileCard,
   MobileCardRow,
   PageTitle,
+  ModalOverlay,
+  ModalBox,
+  ModalTitle,
+  ModalActions,
+  ErrorText,
 } from '../components/ui';
 import styled from 'styled-components';
-import type { Client } from '../types';
+import { theme } from '../theme';
 
 const Grid = styled.div`
   display: grid;
@@ -45,17 +51,59 @@ const SearchRow = styled.div`
   margin-bottom: 1rem;
 `;
 
+const PackageBtn = styled.button`
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 3.5rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  background: ${({ theme }) => theme.colors.surfaceHover};
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.primary};
+    background: ${({ theme }) => theme.colors.surface};
+  }
+
+  span.count {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: ${({ theme }) => theme.colors.text};
+  }
+
+  span.label {
+    font-size: 0.65rem;
+    color: ${({ theme }) => theme.colors.textMuted};
+    text-transform: uppercase;
+  }
+`;
+
 const BalanceGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0.5rem;
 `;
 
+type PackageField = 'addSolo' | 'addSplit' | 'addRunning';
+
+const PACKAGE_META: Record<
+  PackageField,
+  { label: string; type: WorkoutType; field: PackageField }
+> = {
+  addSolo: { label: WORKOUT_LABELS.solo, type: 'solo', field: 'addSolo' },
+  addSplit: { label: WORKOUT_LABELS.split, type: 'split', field: 'addSplit' },
+  addRunning: { label: WORKOUT_LABELS.running, type: 'running', field: 'addRunning' },
+};
+
 export function LkPage() {
   const isMobile = useIsMobile();
   const { data: clients = [], isLoading } = useGetClientsQuery();
   const [createClient, { isLoading: creating }] = useCreateClientMutation();
-  const [updateClient] = useUpdateClientMutation();
+  const [addPackages] = useAddPackagesMutation();
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({
     name: '',
@@ -64,6 +112,13 @@ export function LkPage() {
     splitRemaining: 0,
     runningRemaining: 0,
   });
+
+  const [packageModal, setPackageModal] = useState<{
+    client: Client;
+    field: PackageField;
+  } | null>(null);
+  const [addCount, setAddCount] = useState(1);
+  const [modalError, setModalError] = useState('');
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -90,18 +145,48 @@ export function LkPage() {
     });
   };
 
-  const patchBalance = async (
-    client: Client,
-    field: 'soloRemaining' | 'splitRemaining' | 'runningRemaining',
-    value: number,
-  ) => {
-    const n = Math.max(0, parseInt(String(value), 10) || 0);
-    await updateClient({ id: client.id, [field]: n }).unwrap();
+  const openPackageModal = (client: Client, field: PackageField) => {
+    setPackageModal({ client, field });
+    setAddCount(1);
+    setModalError('');
   };
+
+  const handleAddPackages = async () => {
+    if (!packageModal) return;
+    const n = Math.max(1, parseInt(String(addCount), 10) || 1);
+    try {
+      await addPackages({
+        id: packageModal.client.id,
+        [packageModal.field]: n,
+      }).unwrap();
+      setPackageModal(null);
+    } catch {
+      setModalError('Не удалось добавить тренировки');
+    }
+  };
+
+  const PackageCell = ({
+    client,
+    field,
+    count,
+  }: {
+    client: Client;
+    field: PackageField;
+    count: number;
+  }) => (
+    <PackageBtn type="button" onClick={() => openPackageModal(client, field)}>
+      <span className="count">{count}</span>
+      <span className="label">{PACKAGE_META[field].label}</span>
+    </PackageBtn>
+  );
 
   return (
     <Page>
       <PageTitle>Личный кабинет</PageTitle>
+      <p style={{ margin: '0 0 1rem', color: theme.colors.textMuted, fontSize: '0.9rem' }}>
+        Нажмите на число в колонке пакета, чтобы добавить тренировки. Списание — только через
+        календарь.
+      </p>
       <Grid>
         <Card>
           <SearchRow>
@@ -115,7 +200,17 @@ export function LkPage() {
             <p>Загрузка…</p>
           ) : isMobile ? (
             filtered.map((c) => (
-              <ClientMobileCard key={c.id} client={c} onPatch={patchBalance} />
+              <MobileCard key={c.id}>
+                <MobileCardRow>
+                  <strong>{formatClientName(c)}</strong>
+                  <Link to={`/lk/clients/${c.id}`}>Карточка</Link>
+                </MobileCardRow>
+                <BalanceGrid>
+                  <PackageCell client={c} field="addSolo" count={c.soloRemaining} />
+                  <PackageCell client={c} field="addSplit" count={c.splitRemaining} />
+                  <PackageCell client={c} field="addRunning" count={c.runningRemaining} />
+                </BalanceGrid>
+              </MobileCard>
             ))
           ) : (
             <TableWrap>
@@ -132,7 +227,22 @@ export function LkPage() {
                 </thead>
                 <tbody>
                   {filtered.map((c) => (
-                    <ClientRow key={c.id} client={c} onPatch={patchBalance} />
+                    <tr key={c.id}>
+                      <td>{c.name}</td>
+                      <td>{c.surname || '—'}</td>
+                      <td>
+                        <Link to={`/lk/clients/${c.id}`}>Открыть</Link>
+                      </td>
+                      <td>
+                        <PackageCell client={c} field="addSolo" count={c.soloRemaining} />
+                      </td>
+                      <td>
+                        <PackageCell client={c} field="addSplit" count={c.splitRemaining} />
+                      </td>
+                      <td>
+                        <PackageCell client={c} field="addRunning" count={c.runningRemaining} />
+                      </td>
+                    </tr>
                   ))}
                 </tbody>
               </Table>
@@ -159,7 +269,7 @@ export function LkPage() {
               />
             </Field>
             <Field>
-              <Label>Соло</Label>
+              <Label>Соло (начально)</Label>
               <Input
                 type="number"
                 min={0}
@@ -170,7 +280,7 @@ export function LkPage() {
               />
             </Field>
             <Field>
-              <Label>Сплит</Label>
+              <Label>Сплит (начально)</Label>
               <Input
                 type="number"
                 min={0}
@@ -181,7 +291,7 @@ export function LkPage() {
               />
             </Field>
             <Field>
-              <Label>Бег</Label>
+              <Label>Бег (начально)</Label>
               <Input
                 type="number"
                 min={0}
@@ -197,131 +307,43 @@ export function LkPage() {
           </form>
         </FormCard>
       </Grid>
+
+      {packageModal && (
+        <ModalOverlay onClick={() => setPackageModal(null)}>
+          <ModalBox onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>
+              Добавить {PACKAGE_META[packageModal.field].label} —{' '}
+              {formatClientName(packageModal.client)}
+            </ModalTitle>
+            <p style={{ margin: '0 0 1rem', color: theme.colors.textMuted }}>
+              Сейчас в пакете:{' '}
+              {packageModal.field === 'addSolo'
+                ? packageModal.client.soloRemaining
+                : packageModal.field === 'addSplit'
+                  ? packageModal.client.splitRemaining
+                  : packageModal.client.runningRemaining}
+            </p>
+            <Field>
+              <Label>Сколько добавить</Label>
+              <Input
+                type="number"
+                min={1}
+                value={addCount}
+                onChange={(e) => setAddCount(Number(e.target.value))}
+              />
+            </Field>
+            {modalError && <ErrorText>{modalError}</ErrorText>}
+            <ModalActions>
+              <Button $variant="ghost" onClick={() => setPackageModal(null)} $block>
+                Отмена
+              </Button>
+              <Button onClick={handleAddPackages} $block>
+                Добавить
+              </Button>
+            </ModalActions>
+          </ModalBox>
+        </ModalOverlay>
+      )}
     </Page>
-  );
-}
-
-function ClientRow({
-  client,
-  onPatch,
-}: {
-  client: Client;
-  onPatch: (
-    c: Client,
-    field: 'soloRemaining' | 'splitRemaining' | 'runningRemaining',
-    v: number,
-  ) => Promise<void>;
-}) {
-  const [solo, setSolo] = useState(client.soloRemaining);
-  const [split, setSplit] = useState(client.splitRemaining);
-  const [running, setRunning] = useState(client.runningRemaining);
-
-  useEffect(() => {
-    setSolo(client.soloRemaining);
-    setSplit(client.splitRemaining);
-    setRunning(client.runningRemaining);
-  }, [client.soloRemaining, client.splitRemaining, client.runningRemaining]);
-
-  return (
-    <tr>
-      <td>{client.name}</td>
-      <td>{client.surname || '—'}</td>
-      <td>
-        <Link to={`/lk/clients/${client.id}`}>Открыть</Link>
-      </td>
-      <td>
-        <InlineInput
-          type="number"
-          min={0}
-          value={solo}
-          onChange={(e) => setSolo(Number(e.target.value))}
-          onBlur={() => onPatch(client, 'soloRemaining', solo)}
-        />
-      </td>
-      <td>
-        <InlineInput
-          type="number"
-          min={0}
-          value={split}
-          onChange={(e) => setSplit(Number(e.target.value))}
-          onBlur={() => onPatch(client, 'splitRemaining', split)}
-        />
-      </td>
-      <td>
-        <InlineInput
-          type="number"
-          min={0}
-          value={running}
-          onChange={(e) => setRunning(Number(e.target.value))}
-          onBlur={() => onPatch(client, 'runningRemaining', running)}
-        />
-      </td>
-    </tr>
-  );
-}
-
-function ClientMobileCard({
-  client,
-  onPatch,
-}: {
-  client: Client;
-  onPatch: (
-    c: Client,
-    field: 'soloRemaining' | 'splitRemaining' | 'runningRemaining',
-    v: number,
-  ) => Promise<void>;
-}) {
-  const [solo, setSolo] = useState(client.soloRemaining);
-  const [split, setSplit] = useState(client.splitRemaining);
-  const [running, setRunning] = useState(client.runningRemaining);
-
-  useEffect(() => {
-    setSolo(client.soloRemaining);
-    setSplit(client.splitRemaining);
-    setRunning(client.runningRemaining);
-  }, [client.soloRemaining, client.splitRemaining, client.runningRemaining]);
-
-  return (
-    <MobileCard>
-      <MobileCardRow>
-        <strong>{formatClientName(client)}</strong>
-        <Link to={`/lk/clients/${client.id}`}>Карточка</Link>
-      </MobileCardRow>
-      <BalanceGrid>
-        <label>
-          <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Соло</span>
-          <InlineInput
-            type="number"
-            min={0}
-            value={solo}
-            style={{ width: '100%', marginTop: 4 }}
-            onChange={(e) => setSolo(Number(e.target.value))}
-            onBlur={() => onPatch(client, 'soloRemaining', solo)}
-          />
-        </label>
-        <label>
-          <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Сплит</span>
-          <InlineInput
-            type="number"
-            min={0}
-            value={split}
-            style={{ width: '100%', marginTop: 4 }}
-            onChange={(e) => setSplit(Number(e.target.value))}
-            onBlur={() => onPatch(client, 'splitRemaining', split)}
-          />
-        </label>
-        <label>
-          <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Бег</span>
-          <InlineInput
-            type="number"
-            min={0}
-            value={running}
-            style={{ width: '100%', marginTop: 4 }}
-            onChange={(e) => setRunning(Number(e.target.value))}
-            onBlur={() => onPatch(client, 'runningRemaining', running)}
-          />
-        </label>
-      </BalanceGrid>
-    </MobileCard>
   );
 }

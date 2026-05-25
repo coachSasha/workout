@@ -5,6 +5,7 @@ import { ru } from 'date-fns/locale';
 import { useGetClientQuery, useShareLinkMutation } from '../api/baseApi';
 import { formatClientName } from '../utils/clientName';
 import { WORKOUT_LABELS } from '../utils/workoutLabels';
+import { historyStatusLabel } from '../utils/historyStatus';
 import { Page, Card, Table, TableWrap, Button, PageTitle } from '../components/ui';
 import styled from 'styled-components';
 import { theme } from '../theme';
@@ -95,10 +96,10 @@ export function ClientCardPage() {
         )}
 
         <h2 style={{ margin: '1.5rem 0 0.75rem', fontSize: '1rem' }}>
-          История проведённых тренировок
+          История тренировок
         </h2>
         {history.length === 0 ? (
-          <p style={{ color: theme.colors.textMuted }}>Пока нет проведённых тренировок.</p>
+          <p style={{ color: theme.colors.textMuted }}>Пока нет записей в истории.</p>
         ) : (
           <TableWrap>
             <Table>
@@ -106,6 +107,7 @@ export function ClientCardPage() {
                 <tr>
                   <th>Дата</th>
                   <th>Тип</th>
+                  <th>Статус</th>
                 </tr>
               </thead>
               <tbody>
@@ -115,6 +117,7 @@ export function ClientCardPage() {
                       {format(new Date(h.date), 'd MMMM yyyy, HH:mm', { locale: ru })}
                     </td>
                     <td>{WORKOUT_LABELS[h.workoutType]}</td>
+                    <td>{historyStatusLabel(h.historyStatus)}</td>
                   </tr>
                 ))}
               </tbody>

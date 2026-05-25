@@ -5,9 +5,13 @@ import type { RootState } from '../store';
 import {
   useGetSessionsQuery,
   useGetClientsQuery,
+  useGetDaysOffQuery,
   useCreateSessionMutation,
   useConfirmSessionMutation,
   useCancelSessionMutation,
+  useReassignSessionMutation,
+  useCreateDayOffMutation,
+  useDeleteDayOffMutation,
 } from '../api/baseApi';
 import { SessionCalendar } from '../components/SessionCalendar';
 import { Page, Card, PageTitle } from '../components/ui';
@@ -16,7 +20,8 @@ import styled from 'styled-components';
 const Hint = styled.p`
   color: ${({ theme }) => theme.colors.textMuted};
   font-size: 0.9rem;
-  margin: 0;
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
 `;
 
 export function HomePage() {
@@ -32,28 +37,38 @@ export function HomePage() {
     [rangeDate],
   );
 
-  const { data: sessions = [], isLoading } = useGetSessionsQuery({ from, to });
+  const { data: sessions = [], isLoading: sessionsLoading } = useGetSessionsQuery({
+    from,
+    to,
+  });
+  const { data: daysOff = [], isLoading: daysOffLoading } = useGetDaysOffQuery({ from, to });
   const { data: clients = [] } = useGetClientsQuery(undefined, {
     skip: !isAuthenticated,
   });
   const [createSession] = useCreateSessionMutation();
   const [confirmSession] = useConfirmSessionMutation();
   const [cancelSession] = useCancelSessionMutation();
+  const [reassignSession] = useReassignSessionMutation();
+  const [createDayOff] = useCreateDayOffMutation();
+  const [deleteDayOff] = useDeleteDayOffMutation();
+
+  const isLoading = sessionsLoading || daysOffLoading;
 
   return (
     <Page>
-      <Card>
-        <PageTitle style={{ marginBottom: '0.5rem' }}>Календарь</PageTitle>
+      <Card $overflowHidden>
+        <PageTitle style={{ marginBottom: '0.35rem' }}>Календарь</PageTitle>
         <Hint>
           {isAuthenticated
-            ? 'Выберите свободный слот для записи или кликните по записи для подтверждения / отмены.'
-            : 'Войдите как тренер, чтобы назначать клиентов на время.'}
+            ? 'Свободный слот — запись клиента. Кнопка «Выходной» — день без тренировок. Серые полосы — выходные.'
+            : 'Просмотр записей и выходных. Войдите как тренер, чтобы назначать клиентов.'}
         </Hint>
         {isLoading ? (
           <p>Загрузка календаря…</p>
         ) : (
           <SessionCalendar
             sessions={sessions}
+            daysOff={daysOff}
             clients={clients}
             isTrainer={isAuthenticated}
             onDateChange={setRangeDate}
@@ -63,8 +78,17 @@ export function HomePage() {
             onConfirm={async (id) => {
               await confirmSession(id).unwrap();
             }}
-            onCancel={async (id) => {
-              await cancelSession(id).unwrap();
+            onCancel={async (id, deduct) => {
+              await cancelSession({ id, deduct }).unwrap();
+            }}
+            onReassign={async (sessionId, data) => {
+              await reassignSession({ id: sessionId, ...data }).unwrap();
+            }}
+            onAddDayOff={async (data) => {
+              await createDayOff(data).unwrap();
+            }}
+            onRemoveDayOff={async (id) => {
+              await deleteDayOff(id).unwrap();
             }}
           />
         )}

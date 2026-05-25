@@ -2,6 +2,7 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type {
   Client,
   Session,
+  DayOff,
   WorkoutType,
   PublicClientView,
   CompletedHistoryItem,
@@ -13,7 +14,7 @@ export const api = createApi({
     baseUrl: '/api',
     credentials: 'include',
   }),
-  tagTypes: ['Clients', 'Sessions', 'Client', 'Public'],
+  tagTypes: ['Clients', 'Sessions', 'Client', 'Public', 'DaysOff'],
   endpoints: (builder) => ({
     getMe: builder.query<{ role: string }, void>({
       query: () => '/auth/me',
@@ -77,6 +78,19 @@ export const api = createApi({
       }),
       invalidatesTags: (_r, _e, id) => [{ type: 'Client', id }, 'Clients'],
     }),
+    getDaysOff: builder.query<DayOff[], { from: string; to: string }>({
+      query: ({ from, to }) =>
+        `/days-off?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      providesTags: ['DaysOff'],
+    }),
+    createDayOff: builder.mutation<DayOff, { date: string; note?: string }>({
+      query: (body) => ({ url: '/days-off', method: 'POST', body }),
+      invalidatesTags: ['DaysOff'],
+    }),
+    deleteDayOff: builder.mutation<{ ok: boolean }, string>({
+      query: (id) => ({ url: `/days-off/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['DaysOff'],
+    }),
     getSessions: builder.query<Session[], { from: string; to: string }>({
       query: ({ from, to }) =>
         `/sessions?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
@@ -93,9 +107,40 @@ export const api = createApi({
       query: (id) => ({ url: `/sessions/${id}/confirm`, method: 'PATCH' }),
       invalidatesTags: ['Sessions', 'Clients', 'Client'],
     }),
-    cancelSession: builder.mutation<Session, string>({
-      query: (id) => ({ url: `/sessions/${id}/cancel`, method: 'PATCH' }),
-      invalidatesTags: ['Sessions'],
+    cancelSession: builder.mutation<Session, { id: string; deduct: boolean }>({
+      query: ({ id, deduct }) => ({
+        url: `/sessions/${id}/cancel`,
+        method: 'PATCH',
+        body: { deduct },
+      }),
+      invalidatesTags: ['Sessions', 'Clients', 'Client'],
+    }),
+    reassignSession: builder.mutation<
+      Session,
+      { id: string; clientId: string; workoutType: WorkoutType }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/sessions/${id}/reassign`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: ['Sessions', 'Clients'],
+    }),
+    addPackages: builder.mutation<
+      Client,
+      {
+        id: string;
+        addSolo?: number;
+        addSplit?: number;
+        addRunning?: number;
+      }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/clients/${id}/packages`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['Clients', 'Client'],
     }),
     getPublicClient: builder.query<PublicClientView, string>({
       query: (token) => `/public/client/${token}`,
@@ -113,9 +158,14 @@ export const {
   useCreateClientMutation,
   useUpdateClientMutation,
   useShareLinkMutation,
+  useGetDaysOffQuery,
+  useCreateDayOffMutation,
+  useDeleteDayOffMutation,
   useGetSessionsQuery,
   useCreateSessionMutation,
   useConfirmSessionMutation,
   useCancelSessionMutation,
+  useReassignSessionMutation,
+  useAddPackagesMutation,
   useGetPublicClientQuery,
 } = api;
