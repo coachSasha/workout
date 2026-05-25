@@ -22,14 +22,23 @@
 
 | id | name | surname | solo_remaining | split_remaining | running_remaining | share_token | created_at |
 
+#### Лист DaysOff
+
+| id | date | note | created_at |
+
+`date` — формат `YYYY-MM-DD` (целый день).
+
 #### Лист Sessions
 
-| id | client_id | client_name | start_datetime | end_datetime | workout_type | status | created_at | updated_at |
+| id | client_id | client_name | start_datetime | end_datetime | workout_type | status | deducted | created_at | updated_at | reassigned |
+
+`deducted`: `true` при отмене со списанием из пакета.  
+`reassigned`: `true` если отменённая запись уже переназначена другому клиенту (один раз на слот).
 
 `workout_type`: `solo` | `split` | `running`  
 `status`: `scheduled` | `completed` | `cancelled`
 
-При запуске с `INIT_SHEETS=true` сервер создаёт листы **Clients** и **Sessions** и пишет заголовки в строку 1. Смотрите вкладки внизу таблицы — не лист «Лист1». Если заголовки пустые, перезапустите сервер после сохранения `.env`.
+При запуске с `INIT_SHEETS=true` сервер создаёт листы **Clients**, **Sessions**, **DaysOff** и пишет заголовки в строку 1. Смотрите вкладки внизу таблицы — не лист «Лист1». Если заголовки пустые, перезапустите сервер после сохранения `.env`.
 
 ### 2. Переменные окружения
 

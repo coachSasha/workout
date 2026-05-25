@@ -16,6 +16,24 @@ function mapSheetError(err: unknown): { status: number; message: string; code: s
       return { status: 400, message: 'Тренировка уже проведена', code: msg };
     case 'CLIENT_NOT_FOUND':
       return { status: 404, message: 'Клиент не найден', code: msg };
+    case 'DAY_OFF':
+      return { status: 400, message: 'В этот день выходной', code: msg };
+    case 'SESSION_NOT_CANCELLED':
+      return { status: 400, message: 'Запись не отменена', code: msg };
+    case 'SESSION_ALREADY_REASSIGNED':
+      return {
+        status: 400,
+        message: 'На этот слот уже назначен другой клиент',
+        code: msg,
+      };
+    case 'SLOT_OCCUPIED':
+      return { status: 400, message: 'На это время уже есть запись', code: msg };
+    case 'SLOT_NEEDS_REASSIGN':
+      return {
+        status: 400,
+        message: 'Сначала переназначьте отменённую запись через карточку в календаре',
+        code: msg,
+      };
     default:
       return { status: 500, message: 'Внутренняя ошибка', code: 'INTERNAL' };
   }
@@ -71,13 +89,53 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.patch<{ Params: { id: string } }>(
+  app.patch<{ Params: { id: string }; Body: { deduct?: boolean } }>(
     '/api/sessions/:id/cancel',
     { preHandler: requireTrainer },
     async (request, reply) => {
       try {
-        return await sheets.cancelSession(request.params.id);
+        const deduct = request.body?.deduct === true;
+        return await sheets.cancelSession(request.params.id, deduct);
       } catch (e) {
+        const err = mapSheetError(e);
+        return reply.status(err.status).send(err);
+      }
+    },
+  );
+
+  app.patch<{
+    Params: { id: string };
+    Body: { clientId?: string; workoutType?: WorkoutType };
+  }>(
+    '/api/sessions/:id/reassign',
+    { preHandler: requireTrainer },
+    async (request, reply) => {
+      const { clientId, workoutType } = request.body ?? {};
+      if (!clientId || !workoutType) {
+        return reply.status(400).send({
+          message: 'clientId и workoutType обязательны',
+          code: 'VALIDATION',
+        });
+      }
+      try {
+        return await sheets.reassignSession(request.params.id, {
+          clientId,
+          workoutType,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'UNKNOWN';
+        if (msg === 'SESSION_NOT_CANCELLED') {
+          return reply.status(400).send({
+            message: 'Переназначить можно только отменённую запись',
+            code: msg,
+          });
+        }
+        if (msg === 'SESSION_ALREADY_REASSIGNED') {
+          return reply.status(400).send({
+            message: 'На этот слот уже назначен другой клиент',
+            code: msg,
+          });
+        }
         const err = mapSheetError(e);
         return reply.status(err.status).send(err);
       }

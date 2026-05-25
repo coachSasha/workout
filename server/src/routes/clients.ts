@@ -58,6 +58,23 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    '/api/clients/:id/packages',
+    { preHandler: requireTrainer },
+    async (request, reply) => {
+      const body = request.body;
+      const client = await sheets.addClientPackages(request.params.id, {
+        addSolo: body.addSolo !== undefined ? Number(body.addSolo) : undefined,
+        addSplit: body.addSplit !== undefined ? Number(body.addSplit) : undefined,
+        addRunning: body.addRunning !== undefined ? Number(body.addRunning) : undefined,
+      });
+      if (!client) {
+        return reply.status(404).send({ message: 'Клиент не найден', code: 'NOT_FOUND' });
+      }
+      return client;
+    },
+  );
+
   app.post<{ Params: { id: string } }>(
     '/api/clients/:id/share-link',
     { preHandler: requireTrainer },
