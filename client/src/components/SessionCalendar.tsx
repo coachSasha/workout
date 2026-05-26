@@ -538,7 +538,6 @@ export function SessionCalendar({
             onDateChange?.(d);
           }}
           selectable={isTrainer}
-          longPressThreshold={1}
           onSelectSlot={handleSelectSlot}
           onSelectEvent={handleSelectEvent}
           eventPropGetter={eventStyleGetter}
