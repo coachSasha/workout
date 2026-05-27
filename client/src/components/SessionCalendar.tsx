@@ -14,6 +14,7 @@ import {
   groupTitle,
   groupStatusLabel,
   isRunningGroup,
+  shortClientName,
 } from '../utils/sessionGroups';
 import {
   ModalOverlay,
@@ -344,7 +345,7 @@ export function SessionCalendar({
           : '';
       return {
         id: s.id,
-        title: `${s.clientName || 'Занято'} · ${WORKOUT_LABELS[s.workoutType]}${status}`,
+        title: `${shortClientName(s.clientName || 'Занято') || 'Занято'} · ${WORKOUT_LABELS[s.workoutType]}${status}`,
         start: new Date(s.startDatetime),
         end: new Date(s.endDatetime),
         resource: { kind: 'session' as const, session: s },
