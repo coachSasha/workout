@@ -2,15 +2,15 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 
-export interface MultiSelectOption {
+export interface SelectOption {
   value: string;
   label: string;
 }
 
 interface Props {
-  value: string[];
-  options: MultiSelectOption[];
-  onChange: (value: string[]) => void;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
   disabled?: boolean;
   placeholder?: string;
 }
@@ -66,7 +66,7 @@ const Chevron = styled.span<{ $open: boolean }>`
 const Dropdown = styled.div`
   position: fixed;
   z-index: 10000;
-  max-height: min(220px, 40vh);
+  max-height: min(260px, 45vh);
   overflow-y: auto;
   border-radius: ${({ theme }) => theme.radius};
   border: 1px solid ${({ theme }) => theme.colors.border};
@@ -78,7 +78,6 @@ const Dropdown = styled.div`
 const OptionBtn = styled.button<{ $selected: boolean }>`
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   width: 100%;
   min-height: 44px;
   padding: 0.55rem 0.85rem;
@@ -101,36 +100,12 @@ const OptionBtn = styled.button<{ $selected: boolean }>`
   }
 `;
 
-const Check = styled.span<{ $selected: boolean }>`
-  flex-shrink: 0;
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: 4px;
-  border: 1px solid
-    ${({ theme, $selected }) => ($selected ? theme.colors.primary : theme.colors.border)};
-  background: ${({ theme, $selected }) => ($selected ? theme.colors.primary : 'transparent')};
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 0.7rem;
-  line-height: 1;
-`;
-
-function formatTriggerLabel(
-  value: string[],
-  options: MultiSelectOption[],
-  placeholder: string,
-): string {
-  if (value.length === 0) return placeholder;
-  const labels = value
-    .map((id) => options.find((o) => o.value === id)?.label)
-    .filter(Boolean) as string[];
-  if (labels.length <= 2) return labels.join(', ');
-  return `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
+function triggerLabel(value: string, options: SelectOption[], placeholder: string): string {
+  if (!value) return placeholder;
+  return options.find((o) => o.value === value)?.label ?? placeholder;
 }
 
-export function MultiSelect({
+export function SingleSelect({
   value,
   options,
   onChange,
@@ -150,11 +125,11 @@ export function MultiSelect({
     const r = el.getBoundingClientRect();
     setMenuRect(r);
     const gap = 6;
-    const maxH = Math.min(220, Math.floor(window.innerHeight * 0.4));
+    const maxH = Math.min(260, Math.floor(window.innerHeight * 0.45));
     const spaceBelow = window.innerHeight - r.bottom;
     const spaceAbove = r.top;
 
-    const preferAbove = spaceBelow < 180 && spaceAbove > spaceBelow;
+    const preferAbove = spaceBelow < 200 && spaceAbove > spaceBelow;
     const height = Math.max(120, Math.min(maxH, preferAbove ? spaceAbove - gap : spaceBelow - gap));
 
     const top = preferAbove ? Math.max(gap, r.top - gap - height) : r.bottom + 4;
@@ -197,15 +172,7 @@ export function MultiSelect({
     };
   }, [open]);
 
-  const toggle = (id: string) => {
-    if (value.includes(id)) {
-      onChange(value.filter((x) => x !== id));
-    } else {
-      onChange([...value, id]);
-    }
-  };
-
-  const label = formatTriggerLabel(value, options, placeholder);
+  const label = triggerLabel(value, options, placeholder);
 
   return (
     <Wrap ref={wrapRef}>
@@ -219,7 +186,7 @@ export function MultiSelect({
         aria-controls={listId}
         onClick={() => !disabled && setOpen((o) => !o)}
       >
-        <TriggerText $muted={value.length === 0}>{label}</TriggerText>
+        <TriggerText $muted={!value}>{label}</TriggerText>
         <Chevron $open={open}>▼</Chevron>
       </Trigger>
       {open &&
@@ -231,11 +198,22 @@ export function MultiSelect({
             ref={menuRef}
             id={listId}
             role="listbox"
-            aria-multiselectable
             style={menuStyle}
           >
+            <OptionBtn
+              type="button"
+              role="option"
+              aria-selected={!value}
+              $selected={!value}
+              onClick={() => {
+                onChange('');
+                setOpen(false);
+              }}
+            >
+              {placeholder}
+            </OptionBtn>
             {options.map((opt) => {
-              const selected = value.includes(opt.value);
+              const selected = value === opt.value;
               return (
                 <OptionBtn
                   key={opt.value}
@@ -243,9 +221,11 @@ export function MultiSelect({
                   role="option"
                   aria-selected={selected}
                   $selected={selected}
-                  onClick={() => toggle(opt.value)}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
                 >
-                  <Check $selected={selected}>{selected ? '✓' : ''}</Check>
                   {opt.label}
                 </OptionBtn>
               );
@@ -256,3 +236,4 @@ export function MultiSelect({
     </Wrap>
   );
 }
+

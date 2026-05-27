@@ -29,6 +29,7 @@ import {
   ToolbarRow,
 } from './ui';
 import { MultiSelect } from './MultiSelect';
+import { SingleSelect } from './SingleSelect';
 import { ConfirmModal } from './ConfirmModal';
 import { theme } from '../theme';
 
@@ -715,19 +716,16 @@ export function SessionCalendar({
                       }))}
                     />
                   ) : (
-                    <Select
+                    <SingleSelect
                       value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
+                      onChange={setClientId}
                       disabled={clientsForType.length === 0}
-                    >
-                      <option value="">— выберите клиента —</option>
-                      {clientsForType.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {formatClientName(c)} (остаток:{' '}
-                          {workoutType ? balanceFor(c, workoutType) : 0})
-                        </option>
-                      ))}
-                    </Select>
+                      placeholder="— выберите клиента —"
+                      options={clientsForType.map((c) => ({
+                        value: c.id,
+                        label: `${formatClientName(c)} (остаток: ${workoutType ? balanceFor(c, workoutType) : 0})`,
+                      }))}
+                    />
                   )}
                 </Field>
               </>
