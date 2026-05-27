@@ -47,6 +47,7 @@ export const api = createApi({
         surname?: string;
         soloRemaining?: number;
         splitRemaining?: number;
+        onlineRemaining?: number;
         runningRemaining?: number;
       }
     >({
@@ -61,6 +62,7 @@ export const api = createApi({
         surname?: string;
         soloRemaining?: number;
         splitRemaining?: number;
+        onlineRemaining?: number;
         runningRemaining?: number;
       }
     >({
@@ -126,12 +128,27 @@ export const api = createApi({
       }),
       invalidatesTags: ['Sessions', 'Clients'],
     }),
+    deleteSession: builder.mutation<
+      { deleted: number },
+      { id: string; scope?: 'one' | 'running_group' }
+    >({
+      query: ({ id, scope }) => ({
+        url: `/sessions/${id}?scope=${scope ?? 'one'}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Sessions', 'Clients', 'Client'],
+    }),
+    deleteClient: builder.mutation<{ deletedSessions: number }, string>({
+      query: (id) => ({ url: `/clients/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Clients', 'Sessions', 'Client'],
+    }),
     addPackages: builder.mutation<
       Client,
       {
         id: string;
         addSolo?: number;
         addSplit?: number;
+        addOnline?: number;
         addRunning?: number;
       }
     >({
@@ -166,6 +183,8 @@ export const {
   useConfirmSessionMutation,
   useCancelSessionMutation,
   useReassignSessionMutation,
+  useDeleteSessionMutation,
+  useDeleteClientMutation,
   useAddPackagesMutation,
   useGetPublicClientQuery,
 } = api;

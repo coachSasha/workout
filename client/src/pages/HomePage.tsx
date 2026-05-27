@@ -12,6 +12,7 @@ import {
   useReassignSessionMutation,
   useCreateDayOffMutation,
   useDeleteDayOffMutation,
+  useDeleteSessionMutation,
 } from '../api/baseApi';
 import { SessionCalendar } from '../components/SessionCalendar';
 import { Page, Card, PageTitle } from '../components/ui';
@@ -51,6 +52,7 @@ export function HomePage() {
   const [reassignSession] = useReassignSessionMutation();
   const [createDayOff] = useCreateDayOffMutation();
   const [deleteDayOff] = useDeleteDayOffMutation();
+  const [deleteSession] = useDeleteSessionMutation();
 
   const isLoading = sessionsLoading || daysOffLoading;
 
@@ -93,6 +95,9 @@ export function HomePage() {
             }}
             onRemoveDayOff={async (id) => {
               await deleteDayOff(id).unwrap();
+            }}
+            onDeleteSession={async (id, scope) => {
+              await deleteSession({ id, scope }).unwrap();
             }}
           />
         )}

@@ -17,6 +17,7 @@ export const theme = {
     dayOff: '#94a3b8',
     solo: '#6366f1',
     split: '#8b5cf6',
+    online: '#0ea5e9',
     running: '#14b8a6',
     headerBlur: 'rgba(255, 255, 255, 0.85)',
   },

@@ -38,7 +38,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
           code: 'VALIDATION',
         });
       }
-      if (!['solo', 'split', 'running'].includes(workoutType)) {
+      if (!['solo', 'split', 'online', 'running'].includes(workoutType)) {
         return reply.status(400).send({ message: 'Неверный тип тренировки', code: 'VALIDATION' });
       }
       try {
@@ -110,6 +110,23 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
             code: msg,
           });
         }
+        const err = mapApiError(e);
+        return reply.status(err.status).send(err);
+      }
+    },
+  );
+
+  app.delete<{
+    Params: { id: string };
+    Querystring: { scope?: 'one' | 'running_group' };
+  }>(
+    '/api/sessions/:id',
+    { preHandler: requireTrainer },
+    async (request, reply) => {
+      try {
+        const scope = request.query.scope === 'running_group' ? 'running_group' : 'one';
+        return await sheets.deleteSession(request.params.id, scope);
+      } catch (e) {
         const err = mapApiError(e);
         return reply.status(err.status).send(err);
       }
