@@ -8,7 +8,7 @@ import styled from 'styled-components';
 import type { Session, WorkoutType, Client, DayOff } from '../types';
 import { formatClientName } from '../utils/clientName';
 import { WORKOUT_LABELS, WORKOUT_OPTIONS, statusLabel } from '../utils/workoutLabels';
-import { hasAnyPackage, clientsWithBalance } from '../utils/packages';
+import { hasAnyPackage, clientsWithBalance, balanceFor } from '../utils/packages';
 import {
   calendarSessionGroups,
   groupTitle,
@@ -155,6 +155,19 @@ const CalendarBody = styled.div`
   .rbc-toolbar-label {
     font-size: 0.95rem;
   }
+
+  /* Подсветка: любой день-выходной красим целиком */
+  .dayoff-day {
+    background-color: ${({ theme }) => theme.colors.danger}1a !important;
+  }
+
+  .rbc-time-view .rbc-day-slot.dayoff-day {
+    background-color: ${({ theme }) => theme.colors.danger}1a !important;
+  }
+
+  .rbc-time-view .rbc-day-slot.dayoff-day .rbc-time-slot {
+    background-color: transparent !important;
+  }
 `;
 
 export type CalendarResource =
@@ -179,7 +192,9 @@ function eventColor(resource: CalendarResource): string {
       ? theme.colors.solo
       : s.workoutType === 'split'
         ? theme.colors.split
-        : theme.colors.running;
+        : s.workoutType === 'online'
+          ? theme.colors.online
+          : theme.colors.running;
   if (resource.kind === 'runningGroup') {
     if (resource.members.every((m) => m.status === 'cancelled')) return theme.colors.textMuted;
     if (resource.members.every((m) => m.status === 'completed')) return theme.colors.success;
@@ -272,6 +287,7 @@ export function SessionCalendar({
     const types: WorkoutType[] = [];
     if (eligibleClients.some((c) => c.soloRemaining > 0)) types.push('solo');
     if (eligibleClients.some((c) => c.splitRemaining > 0)) types.push('split');
+    if (eligibleClients.some((c) => c.onlineRemaining > 0)) types.push('online');
     if (eligibleClients.some((c) => c.runningRemaining > 0)) types.push('running');
     return WORKOUT_OPTIONS.filter((o) => types.includes(o.value));
   }, [eligibleClients]);
@@ -490,6 +506,17 @@ export function SessionCalendar({
 
   const handleAddDayOff = async () => {
     if (!dayOffDate) return;
+    const start = startOfDay(parseISO(dayOffDate)).getTime();
+    const end = endOfDay(parseISO(dayOffDate)).getTime();
+    const hasScheduled = sessions.some((s) => {
+      if (s.status !== 'scheduled') return false;
+      const t = new Date(s.startDatetime).getTime();
+      return t >= start && t <= end;
+    });
+    if (hasScheduled) {
+      setError('На этот день уже есть запланированные тренировки');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -566,7 +593,14 @@ export function SessionCalendar({
           events={events}
           view={view}
           onView={setView}
+          views={{ week: true, day: true, month: true }}
           date={date}
+            dayPropGetter={(d) =>
+              dayOffSet.has(toDateKey(d)) ? { className: 'dayoff-day' } : {}
+            }
+            slotPropGetter={(d) =>
+              dayOffSet.has(toDateKey(d)) ? { className: 'dayoff-day' } : {}
+            }
           onNavigate={(d) => {
             setDate(d);
             onDateChange?.(d);
@@ -582,7 +616,6 @@ export function SessionCalendar({
             month: 'Месяц',
             week: 'Неделя',
             day: 'День',
-            agenda: 'Повестка',
             noEventsInRange: 'Нет записей',
           }}
           step={60}
@@ -691,10 +724,7 @@ export function SessionCalendar({
                       {clientsForType.map((c) => (
                         <option key={c.id} value={c.id}>
                           {formatClientName(c)} (остаток:{' '}
-                          {workoutType === 'solo'
-                            ? c.soloRemaining
-                            : c.splitRemaining}
-                          )
+                          {workoutType ? balanceFor(c, workoutType) : 0})
                         </option>
                       ))}
                     </Select>

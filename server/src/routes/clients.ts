@@ -21,6 +21,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         surname: body.surname ? String(body.surname) : undefined,
         soloRemaining: Number(body.soloRemaining ?? 0),
         splitRemaining: Number(body.splitRemaining ?? 0),
+        onlineRemaining: Number(body.onlineRemaining ?? 0),
         runningRemaining: Number(body.runningRemaining ?? 0),
       });
       return client;
@@ -49,6 +50,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         surname: body.surname !== undefined ? String(body.surname) : undefined,
         soloRemaining: body.soloRemaining !== undefined ? Number(body.soloRemaining) : undefined,
         splitRemaining: body.splitRemaining !== undefined ? Number(body.splitRemaining) : undefined,
+        onlineRemaining: body.onlineRemaining !== undefined ? Number(body.onlineRemaining) : undefined,
         runningRemaining: body.runningRemaining !== undefined ? Number(body.runningRemaining) : undefined,
       });
       if (!client) {
@@ -66,6 +68,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       const client = await sheets.addClientPackages(request.params.id, {
         addSolo: body.addSolo !== undefined ? Number(body.addSolo) : undefined,
         addSplit: body.addSplit !== undefined ? Number(body.addSplit) : undefined,
+        addOnline: body.addOnline !== undefined ? Number(body.addOnline) : undefined,
         addRunning: body.addRunning !== undefined ? Number(body.addRunning) : undefined,
       });
       if (!client) {

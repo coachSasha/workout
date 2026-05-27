@@ -38,7 +38,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
           code: 'VALIDATION',
         });
       }
-      if (!['solo', 'split', 'running'].includes(workoutType)) {
+      if (!['solo', 'split', 'online', 'running'].includes(workoutType)) {
         return reply.status(400).send({ message: 'Неверный тип тренировки', code: 'VALIDATION' });
       }
       try {

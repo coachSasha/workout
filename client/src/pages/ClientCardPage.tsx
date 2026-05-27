@@ -33,11 +33,15 @@ import { theme } from '../theme';
 
 const Balances = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.75rem;
   margin-bottom: 1rem;
 
-  @media (max-width: 480px) {
+  @media (max-width: 600px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 380px) {
     grid-template-columns: 1fr;
   }
 `;
@@ -84,6 +88,7 @@ export function ClientCardPage() {
   const [balances, setBalances] = useState({
     soloRemaining: 0,
     splitRemaining: 0,
+    onlineRemaining: 0,
     runningRemaining: 0,
   });
 
@@ -94,6 +99,7 @@ export function ClientCardPage() {
       setBalances({
         soloRemaining: client.soloRemaining,
         splitRemaining: client.splitRemaining,
+        onlineRemaining: client.onlineRemaining,
         runningRemaining: client.runningRemaining,
       });
     }
@@ -113,6 +119,7 @@ export function ClientCardPage() {
     setBalances({
       soloRemaining: client.soloRemaining,
       splitRemaining: client.splitRemaining,
+      onlineRemaining: client.onlineRemaining,
       runningRemaining: client.runningRemaining,
     });
     setEditError('');
@@ -134,6 +141,7 @@ export function ClientCardPage() {
         id: client.id,
         soloRemaining: balances.soloRemaining,
         splitRemaining: balances.splitRemaining,
+        onlineRemaining: balances.onlineRemaining,
         runningRemaining: balances.runningRemaining,
       }).unwrap();
       setBalancesOpen(false);
@@ -170,6 +178,10 @@ export function ClientCardPage() {
           <BalanceItem>
             <div style={{ color: theme.colors.textMuted, fontSize: '0.85rem' }}>Сплит</div>
             <strong style={{ fontSize: '1.5rem' }}>{client.splitRemaining}</strong>
+          </BalanceItem>
+          <BalanceItem>
+            <div style={{ color: theme.colors.textMuted, fontSize: '0.85rem' }}>Онлайн</div>
+            <strong style={{ fontSize: '1.5rem' }}>{client.onlineRemaining}</strong>
           </BalanceItem>
           <BalanceItem>
             <div style={{ color: theme.colors.textMuted, fontSize: '0.85rem' }}>Бег</div>
@@ -279,6 +291,17 @@ export function ClientCardPage() {
                 value={balances.splitRemaining}
                 onChange={(e) =>
                   setBalances({ ...balances, splitRemaining: Number(e.target.value) })
+                }
+              />
+            </Field>
+            <Field>
+              <Label>Онлайн</Label>
+              <Input
+                type="number"
+                min={0}
+                value={balances.onlineRemaining}
+                onChange={(e) =>
+                  setBalances({ ...balances, onlineRemaining: Number(e.target.value) })
                 }
               />
             </Field>

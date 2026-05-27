@@ -23,6 +23,7 @@ const CLIENT_HEADERS = [
   'surname',
   'solo_remaining',
   'split_remaining',
+  'online_remaining',
   'running_remaining',
   'share_token',
   'created_at',
@@ -89,6 +90,7 @@ function rowToClient(row: string[], headers: string[]): Client {
     surname: cell(row, surnameIdx),
     soloRemaining: parseInt(cell(row, colIndex(headers, 'solo_remaining')), 10) || 0,
     splitRemaining: parseInt(cell(row, colIndex(headers, 'split_remaining')), 10) || 0,
+    onlineRemaining: parseInt(cell(row, colIndex(headers, 'online_remaining')), 10) || 0,
     runningRemaining: parseInt(cell(row, colIndex(headers, 'running_remaining')), 10) || 0,
     shareToken,
     createdAt,
@@ -102,6 +104,7 @@ function clientToRow(c: Client): string[] {
     c.surname,
     String(c.soloRemaining),
     String(c.splitRemaining),
+    String(c.onlineRemaining),
     String(c.runningRemaining),
     c.shareToken || generateShareToken(),
     c.createdAt,
@@ -236,13 +239,15 @@ function generateShareToken(): string {
 
 function remainingField(type: WorkoutType): keyof Pick<
   Client,
-  'soloRemaining' | 'splitRemaining' | 'runningRemaining'
+  'soloRemaining' | 'splitRemaining' | 'onlineRemaining' | 'runningRemaining'
 > {
   switch (type) {
     case 'solo':
       return 'soloRemaining';
     case 'split':
       return 'splitRemaining';
+    case 'online':
+      return 'onlineRemaining';
     case 'running':
       return 'runningRemaining';
   }
@@ -423,6 +428,7 @@ export async function createClient(data: {
   surname?: string;
   soloRemaining?: number;
   splitRemaining?: number;
+  onlineRemaining?: number;
   runningRemaining?: number;
 }): Promise<Client> {
   const clients = await getAllClientsRaw();
@@ -432,6 +438,7 @@ export async function createClient(data: {
     surname: (data.surname ?? '').trim(),
     soloRemaining: data.soloRemaining ?? 0,
     splitRemaining: data.splitRemaining ?? 0,
+    onlineRemaining: data.onlineRemaining ?? 0,
     runningRemaining: data.runningRemaining ?? 0,
     shareToken: generateShareToken(),
     createdAt: nowIso(),
@@ -448,6 +455,7 @@ export async function updateClient(
     surname: string;
     soloRemaining: number;
     splitRemaining: number;
+    onlineRemaining: number;
     runningRemaining: number;
     shareToken: string;
   }>,
@@ -461,6 +469,7 @@ export async function updateClient(
   if (patch.surname !== undefined) c.surname = patch.surname.trim();
   if (patch.soloRemaining !== undefined) c.soloRemaining = Math.max(0, patch.soloRemaining);
   if (patch.splitRemaining !== undefined) c.splitRemaining = Math.max(0, patch.splitRemaining);
+  if (patch.onlineRemaining !== undefined) c.onlineRemaining = Math.max(0, patch.onlineRemaining);
   if (patch.runningRemaining !== undefined) c.runningRemaining = Math.max(0, patch.runningRemaining);
   if (patch.shareToken !== undefined) c.shareToken = patch.shareToken;
   if (!c.shareToken) c.shareToken = generateShareToken();
@@ -845,7 +854,7 @@ export async function deleteClient(id: string): Promise<{ deletedSessions: numbe
 
 export async function addClientPackages(
   id: string,
-  data: { addSolo?: number; addSplit?: number; addRunning?: number },
+  data: { addSolo?: number; addSplit?: number; addOnline?: number; addRunning?: number },
 ): Promise<Client | null> {
   const clients = await getAllClientsRaw();
   const idx = clients.findIndex((c) => c.id === id);
@@ -854,6 +863,7 @@ export async function addClientPackages(
   const c = clients[idx];
   if (data.addSolo) c.soloRemaining += Math.max(0, data.addSolo);
   if (data.addSplit) c.splitRemaining += Math.max(0, data.addSplit);
+  if (data.addOnline) c.onlineRemaining += Math.max(0, data.addOnline);
   if (data.addRunning) c.runningRemaining += Math.max(0, data.addRunning);
 
   clients[idx] = c;
@@ -899,6 +909,7 @@ export async function getPublicClientView(token: string): Promise<PublicClientVi
     surname: client.surname,
     soloRemaining: client.soloRemaining,
     splitRemaining: client.splitRemaining,
+    onlineRemaining: client.onlineRemaining,
     runningRemaining: client.runningRemaining,
     upcoming,
     history,

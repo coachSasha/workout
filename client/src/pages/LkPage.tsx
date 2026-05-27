@@ -84,11 +84,15 @@ const PackageBtn = styled.button`
 
 const BalanceGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.5rem;
+
+  @media (max-width: 480px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
 `;
 
-type PackageField = 'addSolo' | 'addSplit' | 'addRunning';
+type PackageField = 'addSolo' | 'addSplit' | 'addOnline' | 'addRunning';
 
 const PACKAGE_META: Record<
   PackageField,
@@ -96,8 +100,22 @@ const PACKAGE_META: Record<
 > = {
   addSolo: { label: WORKOUT_LABELS.solo, type: 'solo', field: 'addSolo' },
   addSplit: { label: WORKOUT_LABELS.split, type: 'split', field: 'addSplit' },
+  addOnline: { label: WORKOUT_LABELS.online, type: 'online', field: 'addOnline' },
   addRunning: { label: WORKOUT_LABELS.running, type: 'running', field: 'addRunning' },
 };
+
+function packageCount(client: Client, field: PackageField): number {
+  switch (field) {
+    case 'addSolo':
+      return client.soloRemaining;
+    case 'addSplit':
+      return client.splitRemaining;
+    case 'addOnline':
+      return client.onlineRemaining;
+    case 'addRunning':
+      return client.runningRemaining;
+  }
+}
 
 export function LkPage() {
   const isMobile = useIsMobile();
@@ -110,6 +128,7 @@ export function LkPage() {
     surname: '',
     soloRemaining: 0,
     splitRemaining: 0,
+    onlineRemaining: 0,
     runningRemaining: 0,
   });
 
@@ -134,6 +153,7 @@ export function LkPage() {
       surname: form.surname.trim() || undefined,
       soloRemaining: form.soloRemaining,
       splitRemaining: form.splitRemaining,
+      onlineRemaining: form.onlineRemaining,
       runningRemaining: form.runningRemaining,
     }).unwrap();
     setForm({
@@ -141,6 +161,7 @@ export function LkPage() {
       surname: '',
       soloRemaining: 0,
       splitRemaining: 0,
+      onlineRemaining: 0,
       runningRemaining: 0,
     });
   };
@@ -208,6 +229,7 @@ export function LkPage() {
                 <BalanceGrid>
                   <PackageCell client={c} field="addSolo" count={c.soloRemaining} />
                   <PackageCell client={c} field="addSplit" count={c.splitRemaining} />
+                  <PackageCell client={c} field="addOnline" count={c.onlineRemaining} />
                   <PackageCell client={c} field="addRunning" count={c.runningRemaining} />
                 </BalanceGrid>
               </MobileCard>
@@ -222,6 +244,7 @@ export function LkPage() {
                     <th>Карточка</th>
                     <th>Соло</th>
                     <th>Сплит</th>
+                    <th>Онлайн</th>
                     <th>Бег</th>
                   </tr>
                 </thead>
@@ -238,6 +261,9 @@ export function LkPage() {
                       </td>
                       <td>
                         <PackageCell client={c} field="addSplit" count={c.splitRemaining} />
+                      </td>
+                      <td>
+                        <PackageCell client={c} field="addOnline" count={c.onlineRemaining} />
                       </td>
                       <td>
                         <PackageCell client={c} field="addRunning" count={c.runningRemaining} />
@@ -291,6 +317,17 @@ export function LkPage() {
               />
             </Field>
             <Field>
+              <Label>Онлайн (начально)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.onlineRemaining}
+                onChange={(e) =>
+                  setForm({ ...form, onlineRemaining: Number(e.target.value) })
+                }
+              />
+            </Field>
+            <Field>
               <Label>Бег (начально)</Label>
               <Input
                 type="number"
@@ -317,11 +354,7 @@ export function LkPage() {
             </ModalTitle>
             <p style={{ margin: '0 0 1rem', color: theme.colors.textMuted }}>
               Сейчас в пакете:{' '}
-              {packageModal.field === 'addSolo'
-                ? packageModal.client.soloRemaining
-                : packageModal.field === 'addSplit'
-                  ? packageModal.client.splitRemaining
-                  : packageModal.client.runningRemaining}
+              {packageCount(packageModal.client, packageModal.field)}
             </p>
             <Field>
               <Label>Сколько добавить</Label>

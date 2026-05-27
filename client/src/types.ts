@@ -1,4 +1,4 @@
-export type WorkoutType = 'solo' | 'split' | 'running';
+export type WorkoutType = 'solo' | 'split' | 'online' | 'running';
 export type SessionStatus = 'scheduled' | 'completed' | 'cancelled';
 
 export interface Client {
@@ -7,6 +7,7 @@ export interface Client {
   surname: string;
   soloRemaining: number;
   splitRemaining: number;
+  onlineRemaining: number;
   runningRemaining: number;
   shareToken: string;
   createdAt: string;
@@ -48,6 +49,7 @@ export interface PublicClientView {
   surname: string;
   soloRemaining: number;
   splitRemaining: number;
+  onlineRemaining: number;
   runningRemaining: number;
   upcoming: Session[];
   history: CompletedHistoryItem[];

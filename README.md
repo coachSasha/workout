@@ -22,7 +22,7 @@
 
 #### Лист Clients (строка 1 — заголовки)
 
-| id | name | surname | solo_remaining | split_remaining | running_remaining | share_token | created_at |
+| id | name | surname | solo_remaining | split_remaining | online_remaining | running_remaining | share_token | created_at |
 
 #### Лист DaysOff
 
@@ -38,7 +38,7 @@
 `reassigned`: `true` если отменённая запись уже переназначена другому клиенту (один раз на слот).  
 `running_group_id`: общий id для группового бега на один слот (несколько строк Sessions).
 
-`workout_type`: `solo` | `split` | `running`  
+`workout_type`: `solo` | `split` | `online` | `running`  
 `status`: `scheduled` | `completed` | `cancelled`
 
 При запуске с `INIT_SHEETS=true` сервер создаёт листы **Clients**, **Sessions**, **DaysOff** и пишет заголовки в строку 1. Смотрите вкладки внизу таблицы — не лист «Лист1». Если заголовки пустые, перезапустите сервер после сохранения `.env`.
@@ -122,7 +122,7 @@ npm start --prefix server
 
 ## Правила бизнес-логики
 
-- Подтверждение `scheduled` → `completed` списывает 1 с поля `solo_remaining`, `split_remaining` или `running_remaining` по типу слота.
+- Подтверждение `scheduled` → `completed` списывает 1 с поля `solo_remaining`, `split_remaining`, `online_remaining` или `running_remaining` по типу слота.
 - При остатке 0 — ошибка 400.
 - Отмена не меняет остатки.
 - Повторное подтверждение уже `completed` — без повторного списания.

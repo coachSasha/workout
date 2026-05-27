@@ -11,11 +11,15 @@ import { theme } from '../theme';
 
 const Balances = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.75rem;
   margin-bottom: 1.5rem;
 
-  @media (max-width: 480px) {
+  @media (max-width: 600px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 380px) {
     grid-template-columns: 1fr;
   }
 `;
@@ -69,6 +73,10 @@ export function PublicClientPage() {
           <BalanceItem>
             <div style={{ color: theme.colors.textMuted }}>Сплит</div>
             <strong style={{ fontSize: '1.4rem' }}>{data.splitRemaining}</strong>
+          </BalanceItem>
+          <BalanceItem>
+            <div style={{ color: theme.colors.textMuted }}>Онлайн</div>
+            <strong style={{ fontSize: '1.4rem' }}>{data.onlineRemaining}</strong>
           </BalanceItem>
           <BalanceItem>
             <div style={{ color: theme.colors.textMuted }}>Бег</div>

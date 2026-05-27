@@ -47,6 +47,7 @@ export const api = createApi({
         surname?: string;
         soloRemaining?: number;
         splitRemaining?: number;
+        onlineRemaining?: number;
         runningRemaining?: number;
       }
     >({
@@ -61,6 +62,7 @@ export const api = createApi({
         surname?: string;
         soloRemaining?: number;
         splitRemaining?: number;
+        onlineRemaining?: number;
         runningRemaining?: number;
       }
     >({
@@ -146,6 +148,7 @@ export const api = createApi({
         id: string;
         addSolo?: number;
         addSplit?: number;
+        addOnline?: number;
         addRunning?: number;
       }
     >({
