@@ -14,6 +14,7 @@ import {
   groupTitle,
   groupStatusLabel,
   isRunningGroup,
+  shortClientName,
 } from '../utils/sessionGroups';
 import {
   ModalOverlay,
@@ -29,6 +30,7 @@ import {
   ToolbarRow,
 } from './ui';
 import { MultiSelect } from './MultiSelect';
+import { SingleSelect } from './SingleSelect';
 import { ConfirmModal } from './ConfirmModal';
 import { theme } from '../theme';
 
@@ -131,6 +133,13 @@ const CalendarBody = styled.div`
   .rbc-event,
   .rbc-background-event {
     pointer-events: auto;
+  }
+
+  /* Гость: нельзя кликать по занятым ячейкам/событиям */
+  .guest-calendar .rbc-event,
+  .guest-calendar .rbc-background-event {
+    pointer-events: none !important;
+    cursor: default !important;
   }
 
   @media (max-width: 768px) {
@@ -275,6 +284,7 @@ export function SessionCalendar({
   const [clientId, setClientId] = useState('');
   const [clientIds, setClientIds] = useState<string[]>([]);
   const [workoutType, setWorkoutType] = useState<WorkoutType | ''>('');
+  const [runningTime, setRunningTime] = useState<'09:30' | '19:30'>('09:30');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -309,6 +319,7 @@ export function SessionCalendar({
       setClientId('');
       setClientIds([]);
     }
+    setRunningTime('09:30');
     setError('');
     setSelected(null);
   };
@@ -334,7 +345,7 @@ export function SessionCalendar({
           : '';
       return {
         id: s.id,
-        title: `${s.clientName || 'Занято'} · ${WORKOUT_LABELS[s.workoutType]}${status}`,
+        title: `${shortClientName(s.clientName || 'Занято') || 'Занято'} · ${WORKOUT_LABELS[s.workoutType]}${status}`,
         start: new Date(s.startDatetime),
         end: new Date(s.endDatetime),
         resource: { kind: 'session' as const, session: s },
@@ -431,6 +442,7 @@ export function SessionCalendar({
   };
 
   const handleSelectEvent = (event: CalendarEvent) => {
+    if (!isTrainer) return;
     setSelected(event.resource);
     setCreateSlot(null);
     setReassignMode(null);
@@ -441,6 +453,25 @@ export function SessionCalendar({
     setWorkoutType(type);
     setClientId('');
     setClientIds([]);
+    if (type === 'running') setRunningTime('09:30');
+  };
+
+  const runningStartForDate = (base: Date, time: '09:30' | '19:30'): Date => {
+    const d = new Date(base);
+    if (time === '09:30') {
+      d.setHours(9, 30, 0, 0);
+    } else {
+      d.setHours(19, 30, 0, 0);
+    }
+    return d;
+  };
+
+  const durationMinutesFor = (type: WorkoutType): number => {
+    return type === 'running' ? 90 : 60;
+  };
+
+  const overlaps = (aStart: number, aEnd: number, bStart: number, bEnd: number): boolean => {
+    return aStart < bEnd && bStart < aEnd;
   };
 
   const handleSaveAssign = async () => {
@@ -454,9 +485,37 @@ export function SessionCalendar({
       if (reassignMode) {
         await onReassign(reassignMode.id, { clientId: ids[0], workoutType });
       } else if (createSlot) {
+        const startDate =
+          workoutType === 'running'
+            ? runningStartForDate(createSlot, runningTime)
+            : createSlot;
+        const endDate = new Date(startDate);
+        endDate.setMinutes(endDate.getMinutes() + durationMinutesFor(workoutType));
+
+        const startMs = startDate.getTime();
+        const endMs = endDate.getTime();
+
+        const blocking = sessions.find((s) => {
+          const sStart = new Date(s.startDatetime).getTime();
+          const sEnd = new Date(s.endDatetime).getTime();
+          if (!overlaps(startMs, endMs, sStart, sEnd)) return false;
+          if (s.status === 'scheduled') return true;
+          if (s.status === 'cancelled' && !s.reassigned) return true;
+          return false;
+        });
+
+        if (blocking) {
+          if (blocking.status === 'cancelled' && !blocking.reassigned) {
+            setError('Сначала переназначьте отменённую запись, которая пересекается по времени');
+          } else {
+            setError('Это время пересекается с уже существующей записью');
+          }
+          return;
+        }
+
         await onCreate({
           clientIds: ids,
-          start: createSlot.toISOString(),
+          start: startDate.toISOString(),
           workoutType,
         });
       }
@@ -588,6 +647,7 @@ export function SessionCalendar({
 
       <CalendarBody>
         <Calendar
+          className={!isTrainer ? 'guest-calendar' : undefined}
           localizer={localizer}
           culture="ru"
           events={events}
@@ -618,7 +678,7 @@ export function SessionCalendar({
             day: 'День',
             noEventsInRange: 'Нет записей',
           }}
-          step={60}
+          step={30}
           timeslots={1}
           min={new Date(1970, 0, 1, 6, 0)}
           max={new Date(1970, 0, 1, 22, 0)}
@@ -695,6 +755,18 @@ export function SessionCalendar({
                     ))}
                   </Select>
                 </Field>
+                {workoutType === 'running' && reassignMode === null && (
+                  <Field>
+                    <Label>Время бега</Label>
+                    <Select
+                      value={runningTime}
+                      onChange={(e) => setRunningTime(e.target.value as '09:30' | '19:30')}
+                    >
+                      <option value="09:30">09:30</option>
+                      <option value="19:30">19:30</option>
+                    </Select>
+                  </Field>
+                )}
                 <Field>
                   <Label>
                     {workoutType === 'running' ? 'Клиенты' : 'Клиент'}
@@ -715,19 +787,16 @@ export function SessionCalendar({
                       }))}
                     />
                   ) : (
-                    <Select
+                    <SingleSelect
                       value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
+                      onChange={setClientId}
                       disabled={clientsForType.length === 0}
-                    >
-                      <option value="">— выберите клиента —</option>
-                      {clientsForType.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {formatClientName(c)} (остаток:{' '}
-                          {workoutType ? balanceFor(c, workoutType) : 0})
-                        </option>
-                      ))}
-                    </Select>
+                      placeholder="— выберите клиента —"
+                      options={clientsForType.map((c) => ({
+                        value: c.id,
+                        label: `${formatClientName(c)} (остаток: ${workoutType ? balanceFor(c, workoutType) : 0})`,
+                      }))}
+                    />
                   )}
                 </Field>
               </>

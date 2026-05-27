@@ -170,12 +170,29 @@ function enrichSessions(sessions: Session[]): Session[] {
   }));
 }
 
-function sessionsAtStart(sessions: Session[], start: string): Session[] {
-  return sessions.filter((s) => s.startDatetime === start);
+function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  // [start, end)
+  return aStart < bEnd && bStart < aEnd;
 }
 
-function assertSlotHasNoScheduled(sessions: Session[], start: string): void {
-  if (sessionsAtStart(sessions, start).some((s) => s.status === 'scheduled')) {
+function assertIntervalHasNoScheduled(
+  sessions: Session[],
+  startIso: string,
+  endIso: string,
+  ignoreId?: string,
+): void {
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (end <= start) return;
+  if (
+    sessions.some((s) => {
+      if (ignoreId && s.id === ignoreId) return false;
+      if (s.status !== 'scheduled') return false;
+      const sStart = new Date(s.startDatetime).getTime();
+      const sEnd = new Date(s.endDatetime).getTime();
+      return overlaps(start, end, sStart, sEnd);
+    })
+  ) {
     throw new Error('SLOT_OCCUPIED');
   }
 }
@@ -189,37 +206,24 @@ function runningPeers(sessions: Session[], session: Session): Session[] {
   );
 }
 
-function slotBlocksNewBooking(sessions: Session[], start: string): void {
-  const atSlot = sessionsAtStart(sessions, start);
-  if (atSlot.some((s) => s.status === 'scheduled')) {
-    throw new Error('SLOT_OCCUPIED');
-  }
+function slotBlocksNewBooking(sessions: Session[], startIso: string, endIso: string): void {
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (end <= start) throw new Error('SLOT_OCCUPIED');
 
-  for (const s of atSlot) {
-    if (s.workoutType !== 'running' && s.status === 'cancelled' && !s.reassigned) {
+  for (const s of sessions) {
+    const sStart = new Date(s.startDatetime).getTime();
+    const sEnd = new Date(s.endDatetime).getTime();
+    if (!overlaps(start, end, sStart, sEnd)) continue;
+
+    if (s.status === 'scheduled') {
+      throw new Error('SLOT_OCCUPIED');
+    }
+
+    // Внутри пересекающегося окна есть отменённая запись, которую нужно переназначить
+    if (s.status === 'cancelled' && !s.reassigned) {
       throw new Error('SLOT_NEEDS_REASSIGN');
     }
-  }
-
-  const groupIds = new Set(
-    atSlot
-      .filter((s) => s.workoutType === 'running' && s.runningGroupId)
-      .map((s) => s.runningGroupId),
-  );
-  for (const gid of groupIds) {
-    const group = atSlot.filter((s) => s.runningGroupId === gid);
-    const allCancelled = group.every((s) => s.status === 'cancelled');
-    const needsReassign = group.some((s) => !s.reassigned);
-    if (allCancelled && needsReassign) {
-      throw new Error('SLOT_NEEDS_REASSIGN');
-    }
-  }
-
-  const legacyRunning = atSlot.filter(
-    (s) => s.workoutType === 'running' && !s.runningGroupId && s.status === 'cancelled' && !s.reassigned,
-  );
-  if (legacyRunning.length > 0) {
-    throw new Error('SLOT_NEEDS_REASSIGN');
   }
 }
 
@@ -231,6 +235,11 @@ function addMinutes(isoStart: string, minutes: number): string {
   const d = new Date(isoStart);
   d.setMinutes(d.getMinutes() + minutes);
   return d.toISOString();
+}
+
+function durationMinutes(type: WorkoutType): number {
+  // Бег длится 90 минут, остальные — стандартный слот
+  return type === 'running' ? 90 : config.slotDurationMinutes;
 }
 
 function generateShareToken(): string {
@@ -607,11 +616,11 @@ export async function createSessions(data: {
   }
 
   const sessions = await getAllSessionsRaw();
-  slotBlocksNewBooking(sessions, data.start);
+  const end = addMinutes(data.start, durationMinutes(data.workoutType));
+  slotBlocksNewBooking(sessions, data.start, end);
 
   const clients = await getAllClientsRaw();
   const ts = nowIso();
-  const end = addMinutes(data.start, config.slotDurationMinutes);
   const runningGroupId = data.workoutType === 'running' ? uuidv4() : '';
   const created: Session[] = [];
 
@@ -772,7 +781,7 @@ export async function reassignSession(
   if (oldSession.status !== 'cancelled') throw new Error('SESSION_NOT_CANCELLED');
   if (oldSession.reassigned) throw new Error('SESSION_ALREADY_REASSIGNED');
 
-  assertSlotHasNoScheduled(sessions, oldSession.startDatetime);
+  assertIntervalHasNoScheduled(sessions, oldSession.startDatetime, oldSession.endDatetime, oldSession.id);
 
   const client = await getClientById(data.clientId);
   if (!client) throw new Error('CLIENT_NOT_FOUND');
@@ -789,6 +798,7 @@ export async function reassignSession(
     clientId: client.id,
     clientName: formatClientName(client),
     startDatetime: oldSession.startDatetime,
+    // Переназначение не меняет длительность слота — берём ровно как было в исходной записи
     endDatetime: oldSession.endDatetime,
     workoutType: data.workoutType,
     status: 'scheduled',

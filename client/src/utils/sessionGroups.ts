@@ -1,5 +1,18 @@
 import type { Session } from '../types';
 
+export function shortClientName(fullName: string): string {
+  const parts = String(fullName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+  const name = parts[0];
+  const surname = parts.slice(1).join(' ');
+  const initial = name.slice(0, 1).toUpperCase();
+  return `${initial} ${surname}`.trim();
+}
+
 export function runningGroupPeers(sessions: Session[], session: Session): Session[] {
   if (!session.runningGroupId) return [session];
   return sessions.filter(
@@ -35,7 +48,7 @@ export function calendarSessionGroups(sessions: Session[]): Session[][] {
 export function groupTitle(members: Session[], isTrainer: boolean): string {
   const active = members.filter((m) => m.status === 'scheduled');
   const names = (active.length ? active : members)
-    .map((m) => (isTrainer ? m.clientName : 'Участник'))
+    .map((m) => (isTrainer ? shortClientName(m.clientName) : 'Участник'))
     .join(', ');
   const cancelled = members.filter((m) => m.status === 'cancelled').length;
   const suffix =
