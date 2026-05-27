@@ -41,6 +41,10 @@
 `workout_type`: `solo` | `split` | `online` | `running`  
 `status`: `scheduled` | `completed` | `cancelled`
 
+#### Длительность слотов
+- `solo` / `split` / `online`: 60 минут (см. `config.slotDurationMinutes`).
+- `running`: 90 минут.
+
 При запуске с `INIT_SHEETS=true` сервер создаёт листы **Clients**, **Sessions**, **DaysOff** и пишет заголовки в строку 1. Смотрите вкладки внизу таблицы — не лист «Лист1». Если заголовки пустые, перезапустите сервер после сохранения `.env`.
 
 ### 2. Переменные окружения
