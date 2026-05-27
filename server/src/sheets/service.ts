@@ -794,6 +794,55 @@ export async function reassignSession(
   return newSession;
 }
 
+export type DeleteSessionScope = 'one' | 'running_group';
+
+export async function deleteSession(
+  id: string,
+  scope: DeleteSessionScope = 'one',
+): Promise<{ deleted: number }> {
+  const sessions = await getAllSessionsRaw();
+  const session = sessions.find((s) => s.id === id);
+  if (!session) throw new Error('SESSION_NOT_FOUND');
+
+  let next: Session[];
+  if (
+    scope === 'running_group' &&
+    session.workoutType === 'running' &&
+    session.runningGroupId
+  ) {
+    next = sessions.filter(
+      (s) =>
+        !(
+          s.runningGroupId === session.runningGroupId &&
+          s.startDatetime === session.startDatetime
+        ),
+    );
+  } else {
+    next = sessions.filter((s) => s.id !== id);
+  }
+
+  const deleted = sessions.length - next.length;
+  if (deleted === 0) throw new Error('SESSION_NOT_FOUND');
+  await saveSessions(next);
+  return { deleted };
+}
+
+export async function deleteClient(id: string): Promise<{ deletedSessions: number }> {
+  const clients = await getAllClientsRaw();
+  const idx = clients.findIndex((c) => c.id === id);
+  if (idx === -1) throw new Error('CLIENT_NOT_FOUND');
+
+  clients.splice(idx, 1);
+  await saveClients(clients);
+
+  const sessions = await getAllSessionsRaw();
+  const nextSessions = sessions.filter((s) => s.clientId !== id);
+  const deletedSessions = sessions.length - nextSessions.length;
+  await saveSessions(nextSessions);
+
+  return { deletedSessions };
+}
+
 export async function addClientPackages(
   id: string,
   data: { addSolo?: number; addSplit?: number; addRunning?: number },

@@ -29,6 +29,7 @@ import {
   ToolbarRow,
 } from './ui';
 import { MultiSelect } from './MultiSelect';
+import { ConfirmModal } from './ConfirmModal';
 import { theme } from '../theme';
 
 const locales = { ru };
@@ -217,6 +218,7 @@ interface Props {
   ) => Promise<void>;
   onAddDayOff: (data: { date: string; note?: string }) => Promise<void>;
   onRemoveDayOff: (id: string) => Promise<void>;
+  onDeleteSession: (id: string, scope: 'one' | 'running_group') => Promise<void>;
 }
 
 export function SessionCalendar({
@@ -231,6 +233,7 @@ export function SessionCalendar({
   onReassign,
   onAddDayOff,
   onRemoveDayOff,
+  onDeleteSession,
 }: Props) {
   const isMobile = useIsMobile();
   const [view, setView] = useState<View>(isMobile ? 'day' : 'week');
@@ -259,6 +262,11 @@ export function SessionCalendar({
   const [workoutType, setWorkoutType] = useState<WorkoutType | ''>('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    sessionId: string;
+    scope: 'one' | 'running_group';
+    message: string;
+  } | null>(null);
 
   const workoutTypesAvailable = useMemo(() => {
     const types: WorkoutType[] = [];
@@ -490,6 +498,32 @@ export function SessionCalendar({
     } catch (e: unknown) {
       const err = e as { data?: { message?: string } };
       setError(err?.data?.message ?? 'Не удалось добавить выходной');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const requestDeleteSession = (
+    sessionId: string,
+    scope: 'one' | 'running_group',
+    message: string,
+  ) => {
+    setDeleteConfirm({ sessionId, scope, message });
+  };
+
+  const confirmDeleteSession = async () => {
+    if (!deleteConfirm) return;
+    const { sessionId, scope } = deleteConfirm;
+    setLoading(true);
+    setError('');
+    try {
+      await onDeleteSession(sessionId, scope);
+      setDeleteConfirm(null);
+      setSelected(null);
+    } catch (e: unknown) {
+      const err = e as { data?: { message?: string } };
+      setError(err?.data?.message ?? 'Не удалось удалить');
+      setDeleteConfirm(null);
     } finally {
       setLoading(false);
     }
@@ -756,6 +790,22 @@ export function SessionCalendar({
                     На этот слот уже назначен другой клиент.
                   </p>
                 )}
+              {isTrainer && (
+                <Button
+                  $variant="danger"
+                  onClick={() =>
+                    requestDeleteSession(
+                      selected.session.id,
+                      'one',
+                      'Запись будет удалена безвозвратно. Остатки пакетов не изменятся.',
+                    )
+                  }
+                  disabled={loading}
+                  $block
+                >
+                  Удалить запись
+                </Button>
+              )}
               <Button $variant="ghost" onClick={() => setSelected(null)} $block>
                 Закрыть
               </Button>
@@ -782,23 +832,41 @@ export function SessionCalendar({
                 <span style={{ color: theme.colors.textMuted, fontSize: '0.85rem' }}>
                   {statusLabel(m.status, m.deducted)}
                 </span>
-                {isTrainer && m.status === 'scheduled' && (
+                {isTrainer && (
                   <ModalActions $stacked style={{ marginTop: '0.5rem' }}>
+                    {m.status === 'scheduled' && (
+                      <>
+                        <Button
+                          $variant="danger"
+                          onClick={() => handleCancel(m.id, true)}
+                          disabled={loading}
+                          $block
+                        >
+                          {m.clientName}: отменить со списанием
+                        </Button>
+                        <Button
+                          $variant="secondary"
+                          onClick={() => handleCancel(m.id, false)}
+                          disabled={loading}
+                          $block
+                        >
+                          {m.clientName}: отменить без списания
+                        </Button>
+                      </>
+                    )}
                     <Button
-                      $variant="danger"
-                      onClick={() => handleCancel(m.id, true)}
+                      $variant="ghost"
+                      onClick={() =>
+                        requestDeleteSession(
+                          m.id,
+                          'one',
+                          `Запись ${m.clientName} будет удалена безвозвратно.`,
+                        )
+                      }
                       disabled={loading}
                       $block
                     >
-                      {m.clientName}: отменить со списанием
-                    </Button>
-                    <Button
-                      $variant="secondary"
-                      onClick={() => handleCancel(m.id, false)}
-                      disabled={loading}
-                      $block
-                    >
-                      {m.clientName}: отменить без списания
+                      Удалить {m.clientName} из слота
                     </Button>
                   </ModalActions>
                 )}
@@ -837,6 +905,22 @@ export function SessionCalendar({
                     Назначить на слот заново
                   </Button>
                 )}
+              {isTrainer && (
+                <Button
+                  $variant="danger"
+                  onClick={() =>
+                    requestDeleteSession(
+                      selected.members[0].id,
+                      'running_group',
+                      'Будут удалены все участники групповой записи безвозвратно.',
+                    )
+                  }
+                  disabled={loading}
+                  $block
+                >
+                  Удалить всю запись (всех участников)
+                </Button>
+              )}
               <Button $variant="ghost" onClick={() => setSelected(null)} $block>
                 Закрыть
               </Button>
@@ -844,6 +928,20 @@ export function SessionCalendar({
           </ModalBox>
         </ModalOverlay>
       )}
+
+      <ConfirmModal
+        open={deleteConfirm !== null}
+        title="Удалить запись?"
+        danger
+        loading={loading}
+        confirmLabel="Удалить"
+        onCancel={() => setDeleteConfirm(null)}
+        onConfirm={confirmDeleteSession}
+      >
+        {deleteConfirm && (
+          <p style={{ margin: 0, color: theme.colors.textMuted }}>{deleteConfirm.message}</p>
+        )}
+      </ConfirmModal>
 
       {selected?.kind === 'dayoff' && isTrainer && (
         <ModalOverlay onClick={() => setSelected(null)}>

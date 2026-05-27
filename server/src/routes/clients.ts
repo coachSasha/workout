@@ -86,4 +86,20 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       return result;
     },
   );
+
+  app.delete<{ Params: { id: string } }>(
+    '/api/clients/:id',
+    { preHandler: requireTrainer },
+    async (request, reply) => {
+      try {
+        return await sheets.deleteClient(request.params.id);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'UNKNOWN';
+        if (msg === 'CLIENT_NOT_FOUND') {
+          return reply.status(404).send({ message: 'Клиент не найден', code: msg });
+        }
+        throw e;
+      }
+    },
+  );
 }

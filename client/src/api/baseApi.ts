@@ -126,6 +126,20 @@ export const api = createApi({
       }),
       invalidatesTags: ['Sessions', 'Clients'],
     }),
+    deleteSession: builder.mutation<
+      { deleted: number },
+      { id: string; scope?: 'one' | 'running_group' }
+    >({
+      query: ({ id, scope }) => ({
+        url: `/sessions/${id}?scope=${scope ?? 'one'}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Sessions', 'Clients', 'Client'],
+    }),
+    deleteClient: builder.mutation<{ deletedSessions: number }, string>({
+      query: (id) => ({ url: `/clients/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Clients', 'Sessions', 'Client'],
+    }),
     addPackages: builder.mutation<
       Client,
       {
@@ -166,6 +180,8 @@ export const {
   useConfirmSessionMutation,
   useCancelSessionMutation,
   useReassignSessionMutation,
+  useDeleteSessionMutation,
+  useDeleteClientMutation,
   useAddPackagesMutation,
   useGetPublicClientQuery,
 } = api;
